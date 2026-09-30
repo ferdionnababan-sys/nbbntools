@@ -1,0 +1,29 @@
+name: NBBNTOOLS Site Check
+on:
+  push:
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate site structure and branding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          required = [
+            'index.html','404.html','robots.txt','sitemap.xml',
+            'about/index.html','privacy/index.html','terms/index.html','contact/index.html'
+          ]
+          tools = ['harga','profit','diskon','persentase','emi','umur','kata','case','json-formatter','password-generator','utm','unit','caption','deskripsi','random']
+          missing = [p for p in required if not Path(p).is_file()]
+          missing += [f'tools/{t}/index.html' for t in tools if not Path(f'tools/{t}/index.html').is_file()]
+          if missing:
+              raise SystemExit('Missing: ' + ', '.join(missing))
+          html = '\n'.join(p.read_text(encoding='utf-8', errors='ignore') for p in Path('.').rglob('*.html'))
+          if 'Sellora' in html or 'sellora' in html:
+              raise SystemExit('Forbidden legacy branding found: Sellora')
+          if 'https://nbbntools.my.id/tools/' not in Path('sitemap.xml').read_text(encoding='utf-8'):
+              raise SystemExit('Sitemap does not contain tool URLs')
+          print('NBBNTOOLS structure, branding, and sitemap checks passed.')
+          PY
