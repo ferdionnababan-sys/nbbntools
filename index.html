@@ -3,81 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="nbbntools - tools sederhana untuk membantu bisnis online bekerja lebih cepat.">
-  <title>nbbntools — Tools Bisnis Online</title>
+  <meta name="description" content="NBBNTOOLS — tools praktis gratis untuk membantu bisnis online bekerja lebih cepat.">
+  <meta name="theme-color" content="#5b5cf0">
+  <title>NBBNTOOLS — Tools Bisnis Online</title>
   <style>
     *{box-sizing:border-box}
     :root{--bg:#f6f8fc;--card:#fff;--text:#172033;--muted:#667085;--primary:#5b5cf0;--primary2:#7c3aed;--border:#e7eaf1}
+    html{scroll-behavior:smooth}
     body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
     a{text-decoration:none;color:inherit}
-    .nav{height:70px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 6%;position:sticky;top:0;z-index:10}
-    .brand{font-size:25px;font-weight:800;letter-spacing:-.7px}
-    .brand span{color:var(--primary)}
-    .nav-links{display:flex;gap:24px;color:#596273;font-size:14px}
+    button{border:0;border-radius:11px;padding:12px 16px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer;transition:.2s}
+    button:hover{filter:brightness(.95);transform:translateY(-1px)}
+    .nav{height:70px;background:rgba(255,255,255,.96);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 6%;position:sticky;top:0;z-index:10;backdrop-filter:blur(10px)}
+    .brand{font-size:25px;font-weight:800;letter-spacing:-.7px}.brand span{color:var(--primary)}
+    .nav-links{display:flex;gap:24px;color:#596273;font-size:14px}.nav-links a:hover{color:var(--primary)}
     .hero{padding:76px 6% 45px;text-align:center;background:linear-gradient(180deg,#fff 0%,#f6f8fc 100%)}
     .badge{display:inline-block;padding:7px 12px;border:1px solid #dfe1ff;border-radius:999px;background:#f3f3ff;color:#4f46e5;font-size:12px;font-weight:700}
     h1{font-size:clamp(38px,7vw,66px);line-height:1.02;letter-spacing:-2.5px;margin:20px auto 16px;max-width:820px}
     .hero p{max-width:650px;margin:0 auto;color:var(--muted);font-size:17px;line-height:1.7}
     .tools{max-width:1100px;margin:30px auto 70px;padding:0 6%;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:25px;box-shadow:0 8px 25px rgba(20,25,45,.05)}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:25px;box-shadow:0 8px 25px rgba(20,25,45,.05);transition:.2s}
+    .card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(20,25,45,.08)}
     .icon{font-size:32px}.card h2{font-size:20px;margin:14px 0 8px}.card p{color:var(--muted);font-size:14px;line-height:1.6;min-height:45px}
-    button{border:0;border-radius:11px;padding:12px 16px;background:var(--primary);color:white;font-weight:700;cursor:pointer}
-    button:hover{filter:brightness(.95)}
-    .section{max-width:760px;margin:0 auto 70px;padding:0 6%}
-    .section h2{text-align:center;font-size:30px;letter-spacing:-.8px}
-    .toolbox{display:none;background:#fff;border:1px solid var(--border);border-radius:20px;padding:25px;margin-top:22px}
-    .toolbox.active{display:block}
-    label{display:block;font-size:13px;font-weight:700;margin:13px 0 6px}
-    input,textarea,select{width:100%;padding:12px;border:1px solid #dfe3eb;border-radius:10px;font:inherit;background:#fff}
-    textarea{min-height:110px;resize:vertical}
-    .result{margin-top:16px;padding:15px;border-radius:12px;background:#f5f6ff;white-space:pre-wrap;line-height:1.6}
+    .section{max-width:760px;margin:0 auto 70px;padding:0 6%}.section h2{text-align:center;font-size:30px;letter-spacing:-.8px}
+    .toolbox{display:none;background:#fff;border:1px solid var(--border);border-radius:20px;padding:25px;margin-top:22px;box-shadow:0 8px 25px rgba(20,25,45,.05)}
+    .toolbox.active{display:block}label{display:block;font-size:13px;font-weight:700;margin:13px 0 6px}
+    input,textarea,select{width:100%;padding:12px;border:1px solid #dfe3eb;border-radius:10px;font:inherit;background:#fff;outline:none}
+    input:focus,textarea:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(91,92,240,.1)}
+    textarea{min-height:110px;resize:vertical}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+    .secondary{background:#eef0ff;color:#4f46e5}.result{margin-top:16px;padding:15px;border-radius:12px;background:#f5f6ff;white-space:pre-wrap;line-height:1.6;min-height:60px}
     .footer{text-align:center;padding:30px 6%;border-top:1px solid var(--border);color:#7a8495;font-size:13px;background:#fff}
-    @media(max-width:800px){.tools{grid-template-columns:1fr}.nav-links{display:none}.hero{padding-top:55px}h1{letter-spacing:-1.5px}}
+    @media(max-width:800px){.tools{grid-template-columns:1fr}.nav-links{display:none}.hero{padding-top:55px}h1{letter-spacing:-1.5px}.card p{min-height:auto}}
   </style>
 </head>
 <body>
   <nav class="nav">
     <a class="brand" href="#">NBBN<span>TOOLS</span></a>
-    <div class="nav-links">
-      <a href="#tools">Tools</a><a href="#tentang">Tentang</a>
-    </div>
+    <div class="nav-links"><a href="#tools">Tools</a><a href="#tentang">Tentang</a></div>
   </nav>
 
   <header class="hero">
-    <span class="badge">nbbntools • VERSI 1</span>
+    <span class="badge">NBBNTOOLS • GRATIS</span>
     <h1>Tools sederhana untuk bisnis online.</h1>
     <p>Hitung harga jual, buat deskripsi produk, dan siapkan caption promosi dalam satu tempat.</p>
   </header>
 
   <main>
     <section id="tools" class="tools">
-      <article class="card">
-        <div class="icon">🧮</div>
-        <h2>Kalkulator Harga Jual</h2>
-        <p>Hitung harga jual berdasarkan modal, biaya tambahan, dan target keuntungan.</p>
-        <button onclick="openTool('harga')">Mulai</button>
-      </article>
-      <article class="card">
-        <div class="icon">✍️</div>
-        <h2>Deskripsi Produk</h2>
-        <p>Buat draft deskripsi produk yang rapi dan mudah disalin.</p>
-        <button onclick="openTool('deskripsi')">Mulai</button>
-      </article>
-      <article class="card">
-        <div class="icon">📱</div>
-        <h2>Caption Promosi</h2>
-        <p>Buat caption promosi singkat berdasarkan produk dan penawaranmu.</p>
-        <button onclick="openTool('caption')">Mulai</button>
-      </article>
+      <article class="card"><div class="icon">🧮</div><h2>Kalkulator Harga Jual</h2><p>Hitung harga jual berdasarkan modal, biaya tambahan, dan target keuntungan.</p><button onclick="openTool('harga')">Mulai</button></article>
+      <article class="card"><div class="icon">✍️</div><h2>Deskripsi Produk</h2><p>Buat draft deskripsi produk yang rapi dan mudah disalin.</p><button onclick="openTool('deskripsi')">Mulai</button></article>
+      <article class="card"><div class="icon">📱</div><h2>Caption Promosi</h2><p>Buat caption promosi singkat berdasarkan produk dan penawaranmu.</p><button onclick="openTool('caption')">Mulai</button></article>
     </section>
 
     <section class="section">
       <div id="harga" class="toolbox">
         <h2>Kalkulator Harga Jual</h2>
-        <label>Modal produk (Rp)</label><input id="modal" type="number" placeholder="50000">
-        <label>Biaya tambahan (Rp)</label><input id="biaya" type="number" placeholder="5000">
-        <label>Target keuntungan (%)</label><input id="untung" type="number" placeholder="20">
-        <br><br><button onclick="hitungHarga()">Hitung</button>
+        <label>Modal produk (Rp)</label><input id="modal" type="number" min="0" inputmode="numeric" placeholder="50000">
+        <label>Biaya tambahan (Rp)</label><input id="biaya" type="number" min="0" inputmode="numeric" placeholder="5000">
+        <label>Target keuntungan (%)</label><input id="untung" type="number" min="0" inputmode="decimal" placeholder="20">
+        <div class="actions"><button onclick="hitungHarga()">Hitung</button><button class="secondary" onclick="copyResult('hasilHarga')">Salin Hasil</button></div>
         <div id="hasilHarga" class="result">Hasil akan muncul di sini.</div>
       </div>
 
@@ -86,7 +70,7 @@
         <label>Nama produk</label><input id="namaProduk" placeholder="Contoh: Kaos Oversize Premium">
         <label>Keunggulan</label><textarea id="keunggulan" placeholder="Contoh: bahan adem, jahitan rapi, nyaman dipakai"></textarea>
         <label>Target pembeli</label><input id="target" placeholder="Contoh: anak muda">
-        <br><br><button onclick="buatDeskripsi()">Buat Draft</button>
+        <div class="actions"><button onclick="buatDeskripsi()">Buat Draft</button><button class="secondary" onclick="copyResult('hasilDeskripsi')">Salin</button></div>
         <div id="hasilDeskripsi" class="result">Draft akan muncul di sini.</div>
       </div>
 
@@ -95,51 +79,26 @@
         <label>Nama produk</label><input id="captionProduk" placeholder="Contoh: Kaos Oversize Premium">
         <label>Promo / harga</label><input id="promo" placeholder="Contoh: Mulai Rp79.000">
         <label>Keunggulan</label><input id="captionKeunggulan" placeholder="Contoh: nyaman dan cocok untuk daily outfit">
-        <br><br><button onclick="buatCaption()">Buat Caption</button>
+        <div class="actions"><button onclick="buatCaption()">Buat Caption</button><button class="secondary" onclick="copyResult('hasilCaption')">Salin</button></div>
         <div id="hasilCaption" class="result">Caption akan muncul di sini.</div>
       </div>
     </section>
 
     <section id="tentang" class="section">
-      <h2>Kenapa Sellora?</h2>
-      <p style="text-align:center;color:#667085;line-height:1.7">
-        Sellora dirancang sebagai pusat tools praktis untuk membantu penjual online
-        menghemat waktu dan mengelola pekerjaan sehari-hari dengan lebih sederhana.
-      </p>
+      <h2>Tentang NBBNTOOLS</h2>
+      <p style="text-align:center;color:#667085;line-height:1.7">NBBNTOOLS dibuat untuk menyediakan tools praktis yang membantu penjual online menghemat waktu dan menyelesaikan pekerjaan sehari-hari dengan lebih sederhana.</p>
     </section>
   </main>
 
-  <footer class="footer">© 2026 Sellora. Versi awal — terus dikembangkan.</footer>
+  <footer class="footer">© 2026 NBBNTOOLS. Semua hak dilindungi.</footer>
 
   <script>
-    function openTool(id){
-      document.querySelectorAll('.toolbox').forEach(x=>x.classList.remove('active'));
-      const el=document.getElementById(id); el.classList.add('active');
-      el.scrollIntoView({behavior:'smooth',block:'center'});
-    }
+    function openTool(id){document.querySelectorAll('.toolbox').forEach(x=>x.classList.remove('active'));const el=document.getElementById(id);el.classList.add('active');el.scrollIntoView({behavior:'smooth',block:'center'})}
     const rupiah=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n);
-    function hitungHarga(){
-      const modal=Number(document.getElementById('modal').value)||0;
-      const biaya=Number(document.getElementById('biaya').value)||0;
-      const untung=Number(document.getElementById('untung').value)||0;
-      const dasar=modal+biaya, harga=dasar*(1+untung/100), laba=harga-dasar;
-      document.getElementById('hasilHarga').textContent=
-        `Modal + biaya: ${rupiah(dasar)}\nHarga jual: ${rupiah(harga)}\nPerkiraan keuntungan: ${rupiah(laba)}`;
-    }
-    function buatDeskripsi(){
-      const n=document.getElementById('namaProduk').value.trim()||'Produk';
-      const k=document.getElementById('keunggulan').value.trim()||'berkualitas dan nyaman digunakan';
-      const t=document.getElementById('target').value.trim()||'kamu';
-      document.getElementById('hasilDeskripsi').textContent=
-        `${n}\n\nPilihan tepat untuk ${t} yang mencari produk berkualitas.\n\nKeunggulan:\n• ${k.replace(/,\s*/g,'\\n• ')}\n\nPesan sekarang dan gunakan produk ini untuk kebutuhan sehari-hari.`;
-    }
-    function buatCaption(){
-      const n=document.getElementById('captionProduk').value.trim()||'Produk pilihan';
-      const p=document.getElementById('promo').value.trim()||'Harga spesial';
-      const k=document.getElementById('captionKeunggulan').value.trim()||'praktis dan berkualitas';
-      document.getElementById('hasilCaption').textContent=
-        `🔥 ${n}\n\n${k}.\n\n💰 ${p}\n\nJangan sampai kehabisan! Cek produknya sekarang.\n\n#jualanonline #umkm #bisnisonline`;
-    }
+    function hitungHarga(){const modal=Math.max(0,Number(document.getElementById('modal').value)||0);const biaya=Math.max(0,Number(document.getElementById('biaya').value)||0);const untung=Math.max(0,Number(document.getElementById('untung').value)||0);const dasar=modal+biaya,harga=dasar*(1+untung/100),laba=harga-dasar;document.getElementById('hasilHarga').textContent=`Modal + biaya: ${rupiah(dasar)}\nHarga jual: ${rupiah(harga)}\nPerkiraan keuntungan: ${rupiah(laba)}`}
+    function buatDeskripsi(){const n=document.getElementById('namaProduk').value.trim()||'Produk';const k=document.getElementById('keunggulan').value.trim()||'berkualitas dan nyaman digunakan';const t=document.getElementById('target').value.trim()||'kamu';document.getElementById('hasilDeskripsi').textContent=`${n}\n\nPilihan tepat untuk ${t} yang mencari produk berkualitas.\n\nKeunggulan:\n• ${k.replace(/,\s*/g,'\n• ')}\n\nPesan sekarang dan gunakan produk ini untuk kebutuhan sehari-hari.`}
+    function buatCaption(){const n=document.getElementById('captionProduk').value.trim()||'Produk pilihan';const p=document.getElementById('promo').value.trim()||'Harga spesial';const k=document.getElementById('captionKeunggulan').value.trim()||'praktis dan berkualitas';document.getElementById('hasilCaption').textContent=`🔥 ${n}\n\n${k}.\n\n💰 ${p}\n\nJangan sampai kehabisan! Cek produknya sekarang.\n\n#jualanonline #umkm #bisnisonline`}
+    async function copyResult(id){const text=document.getElementById(id).textContent;if(!text||text.includes('akan muncul'))return;try{await navigator.clipboard.writeText(text);alert('Berhasil disalin.')}catch(e){alert('Tidak bisa menyalin otomatis. Silakan blok teks lalu salin.')}}
   </script>
 </body>
 </html>
