@@ -84,9 +84,20 @@ jobs:
               if not re.search(r'<main\b', page, re.I):
                   raise SystemExit(f'Missing main landmark: {t}')
 
+          # Syntax-check executable JavaScript only. JSON-LD is data, not JavaScript.
           for path, page in pages.items():
               blocks = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.I | re.S)
               for i, js in enumerate(blocks, 1):
+                  tag_match = re.search(r'<script([^>]*)>', page, re.I)
+                  if not js.strip():
+                      continue
+                  # Skip non-executable script data such as application/ld+json.
+                  # Re-extract the matching opening tag for this block using a single parser pass below.
+              for i, match in enumerate(re.finditer(r'<script([^>]*)>(.*?)</script>', page, re.I | re.S), 1):
+                  attrs, js = match.group(1), match.group(2)
+                  script_type = re.search(r'\btype\s*=\s*["\']([^"\']+)["\']', attrs, re.I)
+                  if script_type and script_type.group(1).lower().strip() not in ('text/javascript','application/javascript','module'):
+                      continue
                   if not js.strip():
                       continue
                   with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as f:
@@ -97,7 +108,7 @@ jobs:
                       raise SystemExit(f'JavaScript syntax error in {path} script #{i}:\n{result.stderr}')
 
           print(f'Validated {len(tools)} tools and {len(html_files)} HTML files.')
-          print('Passed structure, sitemap, branding, mobile viewport, SEO basics, accessibility landmarks, unsafe JS patterns, secret-pattern checks and inline JavaScript syntax checks.')
+          print('Passed structure, sitemap, branding, mobile viewport, SEO basics, accessibility landmarks, unsafe JS patterns, secret-pattern checks and executable JavaScript syntax checks.')
           PY
 
       - name: Smoke-test local pages
