@@ -1,29 +1,55 @@
 name: NBBNTOOLS Site Check
+
 on:
   push:
   pull_request:
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate site structure and branding
+      - name: Validate site structure, branding, links and sitemap
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
+
           required = [
             'index.html','404.html','robots.txt','sitemap.xml',
             'about/index.html','privacy/index.html','terms/index.html','contact/index.html'
           ]
-          tools = ['harga','profit','diskon','persentase','emi','umur','kata','case','json-formatter','password-generator','utm','unit','caption','deskripsi','random']
+          tools = [
+            'harga-jual','profit','diskon','persentase','emi','umur','kata','case',
+            'json-formatter','password-generator','utm','unit','caption','deskripsi','random'
+          ]
+
           missing = [p for p in required if not Path(p).is_file()]
           missing += [f'tools/{t}/index.html' for t in tools if not Path(f'tools/{t}/index.html').is_file()]
           if missing:
               raise SystemExit('Missing: ' + ', '.join(missing))
-          html = '\n'.join(p.read_text(encoding='utf-8', errors='ignore') for p in Path('.').rglob('*.html'))
-          if 'Sellora' in html or 'sellora' in html:
+
+          html_files = list(Path('.').rglob('*.html'))
+          html = '\n'.join(p.read_text(encoding='utf-8', errors='ignore') for p in html_files)
+
+          if re.search(r'sellora', html, re.I):
               raise SystemExit('Forbidden legacy branding found: Sellora')
-          if 'https://nbbntools.my.id/tools/' not in Path('sitemap.xml').read_text(encoding='utf-8'):
-              raise SystemExit('Sitemap does not contain tool URLs')
-          print('NBBNTOOLS structure, branding, and sitemap checks passed.')
+
+          if 'nbbntools.my.id' not in html:
+              raise SystemExit('Expected NBBNTOOLS domain not found in HTML')
+
+          sitemap = Path('sitemap.xml').read_text(encoding='utf-8', errors='ignore')
+          sitemap_urls = set(re.findall(r'<loc>([^<]+)</loc>', sitemap))
+          expected_tool_urls = {f'https://nbbntools.my.id/tools/{t}/' for t in tools}
+          missing_sitemap = sorted(expected_tool_urls - sitemap_urls)
+          if missing_sitemap:
+              raise SystemExit('Missing sitemap tool URLs: ' + ', '.join(missing_sitemap))
+
+          for t in tools:
+              page = Path(f'tools/{t}/index.html').read_text(encoding='utf-8', errors='ignore')
+              if f'https://nbbntools.my.id/tools/{t}/' not in page and f'href="/tools/{t}/"' not in page:
+                  raise SystemExit(f'Tool page has no canonical/self navigation check: {t}')
+
+          print(f'Validated {len(tools)} tools and {len(html_files)} HTML files.')
+          print('NBBNTOOLS structure, branding, navigation and sitemap checks passed.')
           PY
