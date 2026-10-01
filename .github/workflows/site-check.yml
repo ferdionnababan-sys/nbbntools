@@ -72,6 +72,9 @@ jobs:
                   raise SystemExit(f'Missing mobile viewport: {p}')
               if not re.search(r'<title>\s*[^<]+\s*</title>', page, re.I):
                   raise SystemExit(f'Missing title: {p}')
+              h1_count = len(re.findall(r'<h1\b[^>]*>.*?</h1>', page, re.I | re.S))
+              if h1_count != 1:
+                  raise SystemExit(f'Expected exactly one H1: {p} (found {h1_count})')
 
           sitemap = Path('sitemap.xml').read_text(encoding='utf-8', errors='ignore')
           sitemap_urls = set(re.findall(r'<loc>([^<]+)</loc>', sitemap))
