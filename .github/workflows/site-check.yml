@@ -41,7 +41,6 @@ jobs:
 
           checks = [
               (r'sellora', 'Forbidden legacy branding found: Sellora'),
-              (r'(?i)(?<![a-z])http://', 'Insecure http:// URL found'),
               (r'(?i)\bonclick\s*=', 'Inline onclick handler found'),
               (r'(?i)\bonchange\s*=', 'Inline onchange handler found'),
               (r'(?i)\boninput\s*=', 'Inline oninput handler found'),
@@ -57,6 +56,13 @@ jobs:
           for pattern, message in checks:
               if re.search(pattern, html):
                   raise SystemExit(message)
+
+          # Reject insecure URLs only when http:// is used as an actual URL value.
+          # Text such as protocol validation messages (for example, "http://") is allowed.
+          insecure_url = re.compile(r'(?i)(?:href|src|action|poster|formaction)\s*=\s*["\']http://')
+          for p, page in pages.items():
+              if insecure_url.search(page):
+                  raise SystemExit(f'Insecure http:// URL in HTML attribute: {p}')
 
           if 'nbbntools.my.id' not in html:
               raise SystemExit('Expected NBBNTOOLS domain not found in HTML')
@@ -86,13 +92,6 @@ jobs:
 
           # Syntax-check executable JavaScript only. JSON-LD is data, not JavaScript.
           for path, page in pages.items():
-              blocks = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.I | re.S)
-              for i, js in enumerate(blocks, 1):
-                  tag_match = re.search(r'<script([^>]*)>', page, re.I)
-                  if not js.strip():
-                      continue
-                  # Skip non-executable script data such as application/ld+json.
-                  # Re-extract the matching opening tag for this block using a single parser pass below.
               for i, match in enumerate(re.finditer(r'<script([^>]*)>(.*?)</script>', page, re.I | re.S), 1):
                   attrs, js = match.group(1), match.group(2)
                   script_type = re.search(r'\btype\s*=\s*["\']([^"\']+)["\']', attrs, re.I)
