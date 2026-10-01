@@ -9,52 +9,115 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate site structure, branding, SEO basics and accessibility
+
+      - name: Validate structure, SEO, accessibility, security patterns and JavaScript
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re, subprocess, tempfile
 
-          required = [
-            'index.html','404.html','robots.txt','sitemap.xml',
-            'about/index.html','privacy/index.html','terms/index.html','contact/index.html'
-          ]
           tools = [
             'harga-jual','profit','diskon','persentase','emi','umur','kata','case',
             'json-formatter','password-generator','utm','unit','caption','deskripsi','random'
           ]
-
+          required = [
+            'index.html','404.html','robots.txt','sitemap.xml',
+            'about/index.html','privacy/index.html','terms/index.html','contact/index.html'
+          ]
           missing = [p for p in required if not Path(p).is_file()]
           missing += [f'tools/{t}/index.html' for t in tools if not Path(f'tools/{t}/index.html').is_file()]
           if missing:
               raise SystemExit('Missing: ' + ', '.join(missing))
 
           html_files = list(Path('.').rglob('*.html'))
-          html = '\n'.join(p.read_text(encoding='utf-8', errors='ignore') for p in html_files)
+          pages = {p: p.read_text(encoding='utf-8', errors='ignore') for p in html_files}
+          html = '\n'.join(pages.values())
 
-          if re.search(r'sellora', html, re.I):
-              raise SystemExit('Forbidden legacy branding found: Sellora')
+          checks = [
+              (r'sellora', 'Forbidden legacy branding found: Sellora'),
+              (r'(?i)(?<![a-z])http://', 'Insecure http:// URL found'),
+              (r'(?i)\bonclick\s*=', 'Inline onclick handler found'),
+              (r'(?i)\bonchange\s*=', 'Inline onchange handler found'),
+              (r'(?i)\boninput\s*=', 'Inline oninput handler found'),
+              (r'(?i)\balert\s*\(', 'alert() found'),
+              (r'\bMath\.random\s*\(', 'Math.random() found; use crypto randomness where randomness is required'),
+              (r'(?i)\beval\s*\(', 'eval() found'),
+              (r'(?i)\bnew\s+Function\s*\(', 'new Function() found'),
+              (r'(?i)document\.write\s*\(', 'document.write() found'),
+              (r'(?i)(?:api[_-]?key|secret[_-]?key)\s*[:=]\s*["\'][^"\']{12,}', 'Possible hard-coded API/secret key found'),
+              (r'(?i)sk-[A-Za-z0-9_-]{20,}', 'Possible OpenAI secret found'),
+              (r'(?i)ghp_[A-Za-z0-9]{20,}', 'Possible GitHub token found'),
+          ]
+          for pattern, message in checks:
+              if re.search(pattern, html):
+                  raise SystemExit(message)
+
           if 'nbbntools.my.id' not in html:
               raise SystemExit('Expected NBBNTOOLS domain not found in HTML')
 
+          for p, page in pages.items():
+              if not re.search(r'<meta[^>]+name=["\']viewport["\']', page, re.I):
+                  raise SystemExit(f'Missing mobile viewport: {p}')
+              if not re.search(r'<title>\s*[^<]+\s*</title>', page, re.I):
+                  raise SystemExit(f'Missing title: {p}')
+
           sitemap = Path('sitemap.xml').read_text(encoding='utf-8', errors='ignore')
           sitemap_urls = set(re.findall(r'<loc>([^<]+)</loc>', sitemap))
-          expected_tool_urls = {f'https://nbbntools.my.id/tools/{t}/' for t in tools}
-          missing_sitemap = sorted(expected_tool_urls - sitemap_urls)
+          expected_urls = {f'https://nbbntools.my.id/tools/{t}/' for t in tools}
+          missing_sitemap = sorted(expected_urls - sitemap_urls)
           if missing_sitemap:
               raise SystemExit('Missing sitemap tool URLs: ' + ', '.join(missing_sitemap))
 
           for t in tools:
-              page = Path(f'tools/{t}/index.html').read_text(encoding='utf-8', errors='ignore')
+              path = Path(f'tools/{t}/index.html')
+              page = pages[path]
               if f'https://nbbntools.my.id/tools/{t}/' not in page and f'href="/tools/{t}/"' not in page:
                   raise SystemExit(f'Tool page has no self navigation/canonical URL: {t}')
-              if not re.search(r'<title>\s*[^<]+\s*</title>', page, re.I):
-                  raise SystemExit(f'Missing title: {t}')
               if not re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'][^"\']+', page, re.I):
                   raise SystemExit(f'Missing meta description: {t}')
               if not re.search(r'<main\b', page, re.I):
                   raise SystemExit(f'Missing main landmark: {t}')
 
+          # Syntax-check every inline JavaScript block with Node.
+          for path, page in pages.items():
+              blocks = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.I | re.S)
+              for i, js in enumerate(blocks, 1):
+                  if not js.strip():
+                      continue
+                  with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as f:
+                      f.write(js)
+                      name = f.name
+                  result = subprocess.run(['node', '--check', name], text=True, capture_output=True)
+                  if result.returncode:
+                      raise SystemExit(f'JavaScript syntax error in {path} script #{i}:\n{result.stderr}')
+
           print(f'Validated {len(tools)} tools and {len(html_files)} HTML files.')
-          print('NBBNTOOLS structure, branding, SEO basics, accessibility landmark, navigation and sitemap checks passed.')
+          print('Passed structure, sitemap, branding, mobile viewport, SEO basics, accessibility landmarks, unsafe JS patterns, secret-pattern checks and inline JavaScript syntax checks.')
+          PY
+
+      - name: Smoke-test local pages
+        run: |
+          python -m http.server 8765 --bind 127.0.0.1 >/tmp/nbbntools-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID' EXIT
+          sleep 1
+          python - <<'PY'
+          from urllib.request import urlopen
+          paths = [
+            '/', '/about/', '/privacy/', '/terms/', '/contact/',
+            '/tools/harga-jual/','/tools/profit/','/tools/diskon/','/tools/persentase/','/tools/emi/',
+            '/tools/umur/','/tools/kata/','/tools/case/','/tools/json-formatter/','/tools/password-generator/',
+            '/tools/utm/','/tools/unit/','/tools/caption/','/tools/deskripsi/','/tools/random/'
+          ]
+          failed=[]
+          for path in paths:
+              try:
+                  with urlopen('http://127.0.0.1:8765'+path, timeout=5) as r:
+                      if r.status != 200:
+                          failed.append((path, r.status))
+              except Exception as e:
+                  failed.append((path, str(e)))
+          if failed:
+              raise SystemExit('Local page smoke test failed: '+repr(failed))
+          print(f'Smoke-tested {len(paths)} local pages successfully.')
           PY
