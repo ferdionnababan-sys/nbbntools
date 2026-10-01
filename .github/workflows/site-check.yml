@@ -2,7 +2,13 @@ name: NBBNTOOLS Site Check
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   validate:
@@ -78,7 +84,6 @@ jobs:
               if not re.search(r'<main\b', page, re.I):
                   raise SystemExit(f'Missing main landmark: {t}')
 
-          # Syntax-check every inline JavaScript block with Node.
           for path, page in pages.items():
               blocks = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', page, re.I | re.S)
               for i, js in enumerate(blocks, 1):
