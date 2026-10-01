@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate site structure, branding, links and sitemap
+      - name: Validate site structure, branding, SEO basics and accessibility
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -34,7 +34,6 @@ jobs:
 
           if re.search(r'sellora', html, re.I):
               raise SystemExit('Forbidden legacy branding found: Sellora')
-
           if 'nbbntools.my.id' not in html:
               raise SystemExit('Expected NBBNTOOLS domain not found in HTML')
 
@@ -48,8 +47,14 @@ jobs:
           for t in tools:
               page = Path(f'tools/{t}/index.html').read_text(encoding='utf-8', errors='ignore')
               if f'https://nbbntools.my.id/tools/{t}/' not in page and f'href="/tools/{t}/"' not in page:
-                  raise SystemExit(f'Tool page has no canonical/self navigation check: {t}')
+                  raise SystemExit(f'Tool page has no self navigation/canonical URL: {t}')
+              if not re.search(r'<title>\s*[^<]+\s*</title>', page, re.I):
+                  raise SystemExit(f'Missing title: {t}')
+              if not re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'][^"\']+', page, re.I):
+                  raise SystemExit(f'Missing meta description: {t}')
+              if not re.search(r'<main\b', page, re.I):
+                  raise SystemExit(f'Missing main landmark: {t}')
 
           print(f'Validated {len(tools)} tools and {len(html_files)} HTML files.')
-          print('NBBNTOOLS structure, branding, navigation and sitemap checks passed.')
+          print('NBBNTOOLS structure, branding, SEO basics, accessibility landmark, navigation and sitemap checks passed.')
           PY
