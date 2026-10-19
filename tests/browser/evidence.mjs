@@ -66,7 +66,28 @@ try {
       innerWidth: window.innerWidth,
       scrollWidth: document.documentElement.scrollWidth,
       documentHeight: document.documentElement.scrollHeight,
-      title: document.title
+      title: document.title,
+      overflowCandidates: [...document.querySelectorAll('body *')]
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return {
+            tag: el.tagName.toLowerCase(),
+            id: el.id || '',
+            className: typeof el.className === 'string' ? el.className.slice(0, 100) : '',
+            text: (el.innerText || '').trim().slice(0, 70),
+            left: Math.round(r.left),
+            right: Math.round(r.right),
+            width: Math.round(r.width),
+            minWidth: s.minWidth,
+            widthCss: s.width,
+            position: s.position,
+            overflowX: s.overflowX
+          };
+        })
+        .filter(el => el.right > window.innerWidth + 2 || el.left < -2)
+        .sort((a, b) => b.right - a.right)
+        .slice(0, 12)
     }));
     const pass = metrics.scrollWidth <= metrics.innerWidth + 1;
     report.viewports.push({ ...viewport, ...metrics, noHorizontalOverflow: pass });
