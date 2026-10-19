@@ -92,7 +92,7 @@ const KEY='nbbntools_kasir_v1';
 const $=id=>document.getElementById(id);
 const rupiah=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(Number(n)||0);
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const uid=()=>{const a=new Uint32Array(2);crypto.getRandomValues(a);return Date.now().toString(36)+Array.from(a,x=>x.toString(36)).join('')};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initial=()=>({products:[],transactions:[],settings:{storeName:'Warung Saya',storeAddress:'',storePhone:'',receiptFooter:'Terima kasih sudah berbelanja!'},heldCart:null});
 let db=loadDB(),cart=[],lastReceipt=null,toastTimer;
