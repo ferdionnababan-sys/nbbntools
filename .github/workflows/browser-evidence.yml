@@ -1,0 +1,57 @@
+name: Browser Evidence (Playwright)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "URL to test (must be a public site or preview)"
+        required: true
+        default: "https://nbbntools.my.id/"
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/browser-evidence.yml"
+      - "tests/browser/**"
+
+permissions:
+  contents: read
+
+jobs:
+  browser-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Serve checked-out site locally
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/nbbntools-http.log 2>&1 &
+          echo $! > /tmp/nbbntools-http.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:4173/ > /dev/null
+      - name: Run real-browser checks against checked-out code
+        env:
+          TARGET_URL: http://127.0.0.1:4173/
+        run: node tests/browser/evidence.mjs
+      - name: Upload screenshots and report (even on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nbbntools-browser-evidence
+          path: browser-evidence/
+          if-no-files-found: warn
+          retention-days: 14
