@@ -34,7 +34,20 @@ jobs:
         run: |
           npm install --no-save playwright
           npx playwright install --with-deps chromium
-      - name: Run real-browser checks
+      - name: Serve checked-out site locally
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 > /tmp/nbbntools-http.log 2>&1 &
+          echo $! > /tmp/nbbntools-http.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:4173/ > /dev/null
+      - name: Run real-browser checks against checked-out code
+        env:
+          TARGET_URL: http://127.0.0.1:4173/
         run: node tests/browser/evidence.mjs
       - name: Upload screenshots and report (even on failure)
         if: always()
