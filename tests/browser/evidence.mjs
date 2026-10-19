@@ -1,3 +1,4 @@
+// Browser evidence runs against the checked-out PR branch to validate homepage changes before merge.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
