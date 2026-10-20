@@ -94,6 +94,113 @@ try {
     report.viewports.push({ ...viewport, ...metrics, noHorizontalOverflow: pass });
     await page.screenshot({ path: path.join(out, `viewport-${viewport.width}x${viewport.height}.png`), fullPage: true });
   }
+  // Cashier regression checks: real Chromium DOM with a mocked camera/BarcodeDetector.
+  // This verifies the UI/state flow without requiring physical camera hardware in CI.
+  const cashierUrl = new URL('/kasir/', target).href;
+  await page.addInitScript(() => {
+    window.__mockBarcodeValue = '0000000000000';
+    class MockBarcodeDetector {
+      constructor() {}
+      static async getSupportedFormats() { return ['ean_13']; }
+      async detect() { return [{ rawValue: window.__mockBarcodeValue }]; }
+    }
+    Object.defineProperty(window, 'BarcodeDetector', { configurable: true, value: MockBarcodeDetector });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: async () => new MediaStream() }
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', {
+      configurable: true,
+      get() { return 2; }
+    });
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+    HTMLMediaElement.prototype.pause = () => {};
+  });
+  await page.goto(cashierUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  report.checks.push({ name: 'cashier_http_page_loaded', pass: await page.locator('#productGrid').count() === 1 });
+
+  // Product creation and duplicate barcode protection.
+  await page.locator('button[data-panel="products"]').click();
+  await page.locator('#addProduct').click();
+  await page.locator('#pName').fill('Browser Test Product');
+  await page.locator('#pCategory').fill('Testing');
+  await page.locator('#pBarcode').fill('0012345678905');
+  await page.locator('#pCost').fill('500');
+  await page.locator('#pPrice').fill('1000');
+  await page.locator('#pStock').fill('5');
+  await page.locator('#productForm button[type="submit"]').click();
+  await page.locator('#productsTable').getByText('Browser Test Product').waitFor();
+  const createdCount = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).count();
+  report.checks.push({ name: 'cashier_create_product', pass: createdCount === 1, actual: createdCount });
+
+  await page.locator('#addProduct').click();
+  await page.locator('#pName').fill('Duplicate Barcode Product');
+  await page.locator('#pBarcode').fill('0012345678905');
+  await page.locator('#pCost').fill('100');
+  await page.locator('#pPrice').fill('200');
+  await page.locator('#pStock').fill('2');
+  await page.locator('#productForm button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Barcode/kode tersebut'));
+  const duplicateCount = await page.locator('#productsTable tr').filter({ hasText: '0012345678905' }).count();
+  report.checks.push({ name: 'cashier_duplicate_barcode_rejected', pass: duplicateCount === 1, actual: duplicateCount });
+  await page.locator('#productModal [data-close="productModal"]').first().click();
+
+  // Failed localStorage write must not leave an unsaved product in the UI.
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () { throw new DOMException('quota test', 'QuotaExceededError'); };
+  });
+  await page.locator('#addProduct').click();
+  await page.locator('#pName').fill('Must Roll Back Product');
+  await page.locator('#pBarcode').fill('ROLLBACK-001');
+  await page.locator('#pCost').fill('10');
+  await page.locator('#pPrice').fill('20');
+  await page.locator('#pStock').fill('1');
+  await page.locator('#productForm button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const rollbackCount = await page.locator('#productsTable tr').filter({ hasText: 'Must Roll Back Product' }).count();
+  report.checks.push({ name: 'cashier_product_save_failure_rolls_back', pass: rollbackCount === 0, actual: rollbackCount });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  await page.locator('#productModal [data-close="productModal"]').first().click();
+
+  // Unknown barcode must not add a product; a registered barcode must add the right product.
+  await page.locator('button[data-panel="sale"]').click();
+  await page.evaluate(() => { window.__mockBarcodeValue = 'NOT-REGISTERED'; });
+  await page.locator('#scanBarcodeBtn').click();
+  await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
+  const unknownCartItems = await page.locator('#cartList .cart-item').count();
+  report.checks.push({ name: 'cashier_unknown_barcode_does_not_add_product', pass: unknownCartItems === 0, actual: unknownCartItems });
+
+  await page.evaluate(() => { window.__mockBarcodeValue = '0012345678905'; });
+  await page.locator('#scanBarcodeBtn').click();
+  await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
+  const matchedCart = await page.locator('#cartList').getByText('Browser Test Product').count();
+  report.checks.push({ name: 'cashier_registered_barcode_adds_matching_product', pass: matchedCart > 0, actual: matchedCart });
+
+  // Complete a sale and confirm it appears in transaction history.
+  await page.locator('#paidAmount').fill('1000');
+  await page.locator('#checkout').click();
+  await page.locator('button[data-panel="history"]').click();
+  await page.waitForFunction(() => document.querySelectorAll('#historyTable tr').length === 1, null, { timeout: 8000 });
+  const historyRows = await page.locator('#historyTable tr').count();
+  report.checks.push({ name: 'cashier_checkout_records_transaction', pass: historyRows === 1, actual: historyRows });
+
+  // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
+  await page.locator('button[data-panel="products"]').click();
+  const historicalProductRow = page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' });
+  page.once('dialog', dialog => dialog.accept());
+  await historicalProductRow.locator('button[data-action="delete"]').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Browser Test Product') && row.innerText.includes('Disembunyikan')));
+  const hiddenProductCount = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasText: 'Disembunyikan' }).count();
+  const preservedHistoryCount = await page.locator('button[data-panel="history"]').count();
+  report.checks.push({ name: 'cashier_product_with_history_is_hidden_not_deleted', pass: hiddenProductCount === 1 && preservedHistoryCount === 1, hiddenProductCount });
+
+  await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="activate"]').click();
+  const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
+  report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
+
 } catch (error) {
   report.failed = true;
   report.fatalError = String(error?.stack || error);
