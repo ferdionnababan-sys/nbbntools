@@ -18,7 +18,8 @@ const viewports = [
 
 const report = { target, startedAt: new Date().toISOString(), viewports: [], checks: [], pageErrors: [], consoleErrors: [], failed: false };
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
+const context = await browser.newContext({ timezoneId: 'Asia/Jakarta' });
+const page = await context.newPage();
 page.on('pageerror', error => report.pageErrors.push(String(error)));
 page.on('console', msg => { if (msg.type() === 'error') report.consoleErrors.push(msg.text()); });
 
@@ -186,6 +187,23 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('#historyTable tr').length === 1, null, { timeout: 8000 });
   const historyRows = await page.locator('#historyTable tr').count();
   report.checks.push({ name: 'cashier_checkout_records_transaction', pass: historyRows === 1, actual: historyRows });
+
+  // Legacy transactions without a stored local day must use the browser's local date, not the UTC date prefix.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    const now = new Date();
+    const localMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 30, 0);
+    db.transactions.push({ id: 'legacy-local-day-test', number: 'LEGACY-DAY-TEST', date: localMidnight.toISOString(), items: [{ id: 'legacy-item', name: 'Legacy Day Item', qty: 1, price: 1000, cost: 500, subtotal: 1000 }], subtotal: 1000, discount: 0, tax: 0, total: 1000, cost: 500 });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const expectedLocalDay = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); });
+  await page.locator('button[data-panel="reports"]').click();
+  await page.locator('#reportDate').fill(expectedLocalDay);
+  await page.waitForFunction(() => Number(document.querySelector('#metricCount')?.textContent) === 2);
+  const localDayReportCount = await page.locator('#metricCount').textContent();
+  report.checks.push({ name: 'cashier_legacy_transaction_report_uses_local_calendar_day', pass: localDayReportCount.trim() === '2', actual: localDayReportCount.trim(), expected: '2' });
 
   // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
   await page.locator('button[data-panel="products"]').click();
