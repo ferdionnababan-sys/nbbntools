@@ -201,6 +201,35 @@ try {
   const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
   report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
 
+  // Invalid backup must be rejected when two products reuse the same normalized barcode.
+  // Existing cashier data must remain unchanged after rejection.
+  const duplicateBarcodeBackup = {
+    backupFormat: 'nbbntools-kasir',
+    backupVersion: 1,
+    backupAt: new Date().toISOString(),
+    products: [
+      { id: 'backup-product-1', name: 'Backup Product One', barcode: 'DUPLICATE-01', cost: 1, price: 2, stock: 3 },
+      { id: 'backup-product-2', name: 'Backup Product Two', barcode: ' duplicate-01 ', cost: 1, price: 2, stock: 3 }
+    ],
+    transactions: [],
+    stockMovements: [],
+    settings: { storeName: 'Invalid Backup Test' }
+  };
+  await page.locator('#restoreFile').setInputFiles({
+    name: 'duplicate-barcode-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(duplicateBarcodeBackup))
+  });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const currentProductPreserved = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).count();
+  const invalidBackupNotApplied = await page.locator('#productsTable tr').filter({ hasText: 'Backup Product One' }).count() === 0;
+  report.checks.push({
+    name: 'cashier_backup_rejects_duplicate_barcodes_without_replacing_current_data',
+    pass: currentProductPreserved === 1 && invalidBackupNotApplied,
+    currentProductPreserved,
+    invalidBackupNotApplied
+  });
+
 } catch (error) {
   report.failed = true;
   report.fatalError = String(error?.stack || error);
