@@ -240,6 +240,22 @@ try {
   const costOverflowState = await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1')); return { stockOne: db.products.find(p => p.id === 'cost-overflow-one').stock, stockTwo: db.products.find(p => p.id === 'cost-overflow-two').stock, txCount: db.transactions.length }; });
   report.checks.push({ name: 'cashier_checkout_rejects_unsafe_aggregate_cost_without_mutation', pass: costOverflowState.stockOne === 1 && costOverflowState.stockTwo === 1 && costOverflowState.txCount === 2, actual: costOverflowState, expected: { stockOne: 1, stockTwo: 1, txCount: 2 } });
 
+  // CSV exports must neutralize formula-like text fields to avoid spreadsheet formula injection.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'csv-formula-test', name: '=1+1', category: 'Testing', barcode: '+CMD', cost: 1, price: 2, stock: 1, active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="products"]').click();
+  const productDownloadPromise = page.waitForEvent('download');
+  await page.locator('#exportProducts').click();
+  const productDownload = await productDownloadPromise;
+  const productCsv = fs.readFileSync(await productDownload.path(), 'utf8');
+  const csvFormulaSafe = productCsv.includes("'=1+1") && productCsv.includes("'+CMD");
+  report.checks.push({ name: 'cashier_csv_neutralizes_spreadsheet_formula_text', pass: csvFormulaSafe, actual: { formulaTextNeutralized: productCsv.includes("'=1+1"), barcodeNeutralized: productCsv.includes("'+CMD") } });
+
   // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
   await page.locator('button[data-panel="products"]').click();
   const historicalProductRow = page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' });
