@@ -145,7 +145,7 @@ try {
   await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Barcode/kode tersebut'));
   const duplicateCount = await page.locator('#productsTable tr').filter({ hasText: '0012345678905' }).count();
   report.checks.push({ name: 'cashier_duplicate_barcode_rejected', pass: duplicateCount === 1, actual: duplicateCount });
-  await page.locator('#productModal [data-close="productModal"]').click();
+  await page.locator('#productModal [data-close="productModal"]').first().click();
 
   // Failed localStorage write must not leave an unsaved product in the UI.
   await page.evaluate(() => {
@@ -163,7 +163,7 @@ try {
   const rollbackCount = await page.locator('#productsTable tr').filter({ hasText: 'Must Roll Back Product' }).count();
   report.checks.push({ name: 'cashier_product_save_failure_rolls_back', pass: rollbackCount === 0, actual: rollbackCount });
   await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
-  await page.locator('#productModal [data-close="productModal"]').click();
+  await page.locator('#productModal [data-close="productModal"]').first().click();
 
   // Unknown barcode must not add a product; a registered barcode must add the right product.
   await page.locator('button[data-panel="sale"]').click();
