@@ -230,6 +230,18 @@ try {
     invalidBackupNotApplied
   });
 
+  // Backups with negative transaction discounts must be rejected without replacing local data.
+  const negativeDiscountBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [],
+    transactions: [{ id: 'bad-tx-1', number: 'BAD-001', date: new Date().toISOString(), day: new Date().toISOString().slice(0, 10), items: [{ id: 'historic-product', name: 'Historic Product', qty: 1, price: 100, cost: 50, subtotal: 100 }], subtotal: 100, discount: -10, tax: 0, total: 110, paid: 110, due: 0, change: 0, cost: 50 }],
+    stockMovements: [], settings: { storeName: 'Invalid Financial Backup' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'negative-discount-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(negativeDiscountBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const negativeBackupNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).transactions.every(t => t.id !== 'bad-tx-1'));
+  report.checks.push({ name: 'cashier_backup_rejects_negative_transaction_discount_without_replacing_data', pass: negativeBackupNotApplied, actual: negativeBackupNotApplied });
+
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
