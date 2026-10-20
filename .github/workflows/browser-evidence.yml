@@ -13,6 +13,8 @@ on:
     paths:
       - ".github/workflows/browser-evidence.yml"
       - "tests/browser/**"
+      - "index.html"
+      - "kasir/index.html"
 
 permissions:
   contents: read
