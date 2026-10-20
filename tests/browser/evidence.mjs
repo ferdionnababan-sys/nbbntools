@@ -240,8 +240,11 @@ try {
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('button[data-panel="products"]').click();
-  page.once('dialog', dialog => dialog.accept('1'));
-  page.once('dialog', dialog => dialog.accept('test overflow'));
+  let stockPromptCount = 0;
+  page.on('dialog', async dialog => {
+    if (dialog.type() === 'prompt') await dialog.accept(stockPromptCount++ === 0 ? '1' : 'test overflow');
+    else await dialog.accept();
+  });
   await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="stock"]').click();
   await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Stok melebihi batas angka aman'));
   const overflowStock = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.find(p => p.name === 'Browser Test Product').stock);
