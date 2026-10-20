@@ -188,6 +188,26 @@ try {
   const historyRows = await page.locator('#historyTable tr').count();
   report.checks.push({ name: 'cashier_checkout_records_transaction', pass: historyRows === 1, actual: historyRows });
 
+  // A failed checkout persistence write must restore stock/history and keep the cart available for retry.
+  await page.locator('button[data-panel="sale"]').click();
+  await page.locator('#productGrid [data-add]').first().click();
+  await page.locator('#paidAmount').fill('1000');
+  const beforeFailedCheckout = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')));
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () { throw new DOMException('quota checkout test', 'QuotaExceededError'); };
+  });
+  await page.locator('#checkout').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const failedCheckoutState = await page.evaluate(() => ({
+    persisted: JSON.parse(localStorage.getItem('nbbntools_kasir_v1')),
+    cartCount: document.querySelectorAll('#cartList .cart-item').length
+  }));
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  const failedCheckoutRollback = JSON.stringify(failedCheckoutState.persisted) === JSON.stringify(beforeFailedCheckout)
+    && failedCheckoutState.cartCount === 1;
+  report.checks.push({ name: 'cashier_checkout_storage_failure_preserves_history_stock_and_cart', pass: failedCheckoutRollback, actual: { cartCount: failedCheckoutState.cartCount, transactionsBefore: beforeFailedCheckout.transactions.length, transactionsAfter: failedCheckoutState.persisted.transactions.length, stockBefore: beforeFailedCheckout.products[0]?.stock, stockAfter: failedCheckoutState.persisted.products[0]?.stock } });
+
   // Legacy transactions without a stored local day must use the browser's local date, not the UTC date prefix.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
