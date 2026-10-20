@@ -181,7 +181,6 @@ try {
 
   // Complete a sale and confirm it appears in transaction history.
   await page.locator('#paidAmount').fill('1000');
-  page.on('dialog', dialog => dialog.dismiss());
   await page.locator('#checkout').click();
   await page.locator('button[data-panel="history"]').click();
   await page.waitForFunction(() => document.querySelectorAll('#historyTable tr').length === 1, null, { timeout: 8000 });
