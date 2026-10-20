@@ -184,7 +184,7 @@ try {
   page.on('dialog', dialog => dialog.dismiss());
   await page.locator('#checkout').click();
   await page.locator('button[data-panel="history"]').click();
-  await page.locator('#historyTable').getByText('Browser Test Product').waitFor({ timeout: 8000 });
+  await page.waitForFunction(() => document.querySelectorAll('#historyTable tr').length === 1, null, { timeout: 8000 });
   const historyRows = await page.locator('#historyTable tr').count();
   report.checks.push({ name: 'cashier_checkout_records_transaction', pass: historyRows === 1, actual: historyRows });
 
