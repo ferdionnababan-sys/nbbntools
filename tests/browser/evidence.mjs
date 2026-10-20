@@ -242,6 +242,17 @@ try {
   const negativeBackupNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).transactions.every(t => t.id !== 'bad-tx-1'));
   report.checks.push({ name: 'cashier_backup_rejects_negative_transaction_discount_without_replacing_data', pass: negativeBackupNotApplied, actual: negativeBackupNotApplied });
 
+  // Finite but unsafe product prices/costs must not be restored from a crafted backup.
+  const unsafePriceBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [{ id: 'unsafe-price-product', name: 'Unsafe Price Product', barcode: 'UNSAFE-PRICE', cost: 1, price: 1e100, stock: 3 }],
+    transactions: [], stockMovements: [], settings: { storeName: 'Invalid Numeric Backup' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'unsafe-price-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(unsafePriceBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const unsafePriceNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.every(p => p.id !== 'unsafe-price-product'));
+  report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
+
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
