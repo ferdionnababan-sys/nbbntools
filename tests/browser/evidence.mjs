@@ -188,6 +188,20 @@ try {
   const historyRows = await page.locator('#historyTable tr').count();
   report.checks.push({ name: 'cashier_checkout_records_transaction', pass: historyRows === 1, actual: historyRows });
 
+  // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
+  await page.locator('button[data-panel="products"]').click();
+  const historicalProductRow = page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' });
+  page.once('dialog', dialog => dialog.accept());
+  await historicalProductRow.locator('button[data-action="delete"]').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Browser Test Product') && row.innerText.includes('Disembunyikan')));
+  const hiddenProductCount = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasText: 'Disembunyikan' }).count();
+  const preservedHistoryCount = await page.locator('button[data-panel="history"]').count();
+  report.checks.push({ name: 'cashier_product_with_history_is_hidden_not_deleted', pass: hiddenProductCount === 1 && preservedHistoryCount === 1, hiddenProductCount });
+
+  await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="activate"]').click();
+  const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
+  report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
+
 } catch (error) {
   report.failed = true;
   report.fatalError = String(error?.stack || error);
