@@ -230,6 +230,26 @@ try {
     invalidBackupNotApplied
   });
 
+  // Stock-in must reject additions that exceed JavaScript's safe integer range.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const data = JSON.parse(localStorage.getItem(key));
+    const product = data.products.find(p => p.name === 'Browser Test Product');
+    product.stock = Number.MAX_SAFE_INTEGER;
+    localStorage.setItem(key, JSON.stringify(data));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="products"]').click();
+  let stockPromptCount = 0;
+  page.on('dialog', async dialog => {
+    if (dialog.type() === 'prompt') await dialog.accept(stockPromptCount++ === 0 ? '1' : 'test overflow');
+    else await dialog.accept();
+  });
+  await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="stock"]').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Stok melebihi batas angka aman'));
+  const overflowStock = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.find(p => p.name === 'Browser Test Product').stock);
+  report.checks.push({ name: 'cashier_stock_in_rejects_safe_integer_overflow', pass: overflowStock === Number.MAX_SAFE_INTEGER, actual: overflowStock });
+
 } catch (error) {
   report.failed = true;
   report.fatalError = String(error?.stack || error);
