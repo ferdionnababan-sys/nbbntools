@@ -18,8 +18,8 @@ const viewports = [
 
 const report = { target, startedAt: new Date().toISOString(), viewports: [], checks: [], pageErrors: [], consoleErrors: [], failed: false };
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
-await page.emulateTimezone('Asia/Jakarta');
+const context = await browser.newContext({ timezoneId: 'Asia/Jakarta' });
+const page = await context.newPage();
 page.on('pageerror', error => report.pageErrors.push(String(error)));
 page.on('console', msg => { if (msg.type() === 'error') report.consoleErrors.push(msg.text()); });
 
