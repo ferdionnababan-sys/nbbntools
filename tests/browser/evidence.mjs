@@ -205,6 +205,22 @@ try {
   const localDayReportCount = await page.locator('#metricCount').textContent();
   report.checks.push({ name: 'cashier_legacy_transaction_report_uses_local_calendar_day', pass: localDayReportCount.trim() === '2', actual: localDayReportCount.trim(), expected: '2' });
 
+  // Checkout must reject totals/costs beyond safe integer precision without changing stock or history.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'overflow-price-product', name: 'Overflow Price Product', category: 'Testing', barcode: 'OVERFLOW-PRICE', cost: 1, price: Number.MAX_SAFE_INTEGER, stock: 2, emoji: '🧪', active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#productGrid [data-add="overflow-price-product"]').click();
+  await page.locator('#productGrid [data-add="overflow-price-product"]').click();
+  await page.locator('#paidAmount').fill('9999999999999999');
+  await page.locator('#checkout').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Nilai transaksi melebihi batas angka aman'));
+  const overflowCheckoutState = await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1')); return { stock: db.products.find(p => p.id === 'overflow-price-product').stock, txCount: db.transactions.length }; });
+  report.checks.push({ name: 'cashier_checkout_rejects_unsafe_total_without_stock_or_history_mutation', pass: overflowCheckoutState.stock === 2 && overflowCheckoutState.txCount === 1, actual: overflowCheckoutState, expected: { stock: 2, txCount: 1 } });
+
   // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
   await page.locator('button[data-panel="products"]').click();
   const historicalProductRow = page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' });
