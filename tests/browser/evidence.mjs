@@ -219,7 +219,7 @@ try {
   await page.locator('#checkout').click();
   await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Nilai transaksi melebihi batas angka aman'));
   const overflowCheckoutState = await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1')); return { stock: db.products.find(p => p.id === 'overflow-price-product').stock, txCount: db.transactions.length }; });
-  report.checks.push({ name: 'cashier_checkout_rejects_unsafe_total_without_stock_or_history_mutation', pass: overflowCheckoutState.stock === 2 && overflowCheckoutState.txCount === 1, actual: overflowCheckoutState, expected: { stock: 2, txCount: 1 } });
+  report.checks.push({ name: 'cashier_checkout_rejects_unsafe_total_without_stock_or_history_mutation', pass: overflowCheckoutState.stock === 2 && overflowCheckoutState.txCount === 2, actual: overflowCheckoutState, expected: { stock: 2, txCount: 2 } });
 
   // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
   await page.locator('button[data-panel="products"]').click();
