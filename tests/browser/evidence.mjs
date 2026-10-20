@@ -248,6 +248,7 @@ try {
     localStorage.setItem(key, JSON.stringify(db));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="products"]').click();
   const productDownloadPromise = page.waitForEvent('download');
   await page.locator('#exportProducts').click();
   const productDownload = await productDownloadPromise;
