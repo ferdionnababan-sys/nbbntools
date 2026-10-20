@@ -221,6 +221,25 @@ try {
   const overflowCheckoutState = await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1')); return { stock: db.products.find(p => p.id === 'overflow-price-product').stock, txCount: db.transactions.length }; });
   report.checks.push({ name: 'cashier_checkout_rejects_unsafe_total_without_stock_or_history_mutation', pass: overflowCheckoutState.stock === 2 && overflowCheckoutState.txCount === 2, actual: overflowCheckoutState, expected: { stock: 2, txCount: 2 } });
 
+  // Even safe per-line costs must be rejected if their combined transaction cost exceeds safe precision.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push(
+      { id: 'cost-overflow-one', name: 'Cost Overflow One', category: 'Testing', barcode: 'COST-OVERFLOW-1', cost: Number.MAX_SAFE_INTEGER, price: 1, stock: 1, active: true },
+      { id: 'cost-overflow-two', name: 'Cost Overflow Two', category: 'Testing', barcode: 'COST-OVERFLOW-2', cost: Number.MAX_SAFE_INTEGER, price: 1, stock: 1, active: true }
+    );
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#productGrid [data-add="cost-overflow-one"]').click();
+  await page.locator('#productGrid [data-add="cost-overflow-two"]').click();
+  await page.locator('#paidAmount').fill('2');
+  await page.locator('#checkout').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Nilai transaksi melebihi batas angka aman'));
+  const costOverflowState = await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1')); return { stockOne: db.products.find(p => p.id === 'cost-overflow-one').stock, stockTwo: db.products.find(p => p.id === 'cost-overflow-two').stock, txCount: db.transactions.length }; });
+  report.checks.push({ name: 'cashier_checkout_rejects_unsafe_aggregate_cost_without_mutation', pass: costOverflowState.stockOne === 1 && costOverflowState.stockTwo === 1 && costOverflowState.txCount === 2, actual: costOverflowState, expected: { stockOne: 1, stockTwo: 1, txCount: 2 } });
+
   // A product with sales history must be hidden, not permanently removed; it must remain reactivatable.
   await page.locator('button[data-panel="products"]').click();
   const historicalProductRow = page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' });
