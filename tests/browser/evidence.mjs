@@ -224,6 +224,8 @@ try {
   await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Barcode duplikat'));
   const duplicateScanState = await page.evaluate(() => ({ cartItems: document.querySelectorAll('#cartList .cart-item').length, toast: document.querySelector('#toast')?.textContent || '' }));
   report.checks.push({ name: 'cashier_duplicate_scanned_barcode_does_not_auto_add_product', pass: duplicateScanState.cartItems === 0 && duplicateScanState.toast.includes('Barcode duplikat'), actual: duplicateScanState });
+  // Restore a known product to the cart so the following checkout regression remains meaningful.
+  await page.locator('#productGrid').getByText('Browser Test Product').click();
 
   // Complete a sale and confirm it appears in transaction history.
   await page.locator('#paidAmount').fill('1000');
