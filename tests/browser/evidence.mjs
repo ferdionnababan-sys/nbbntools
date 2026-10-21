@@ -103,6 +103,7 @@ try {
           const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
           return { transactions: (db.transactions || []).length, stock: product?.stock ?? null };
         });
+        await page.locator('button[data-panel="sale"]').click();
         await page.locator('#productGrid').getByText('Offline Persistence Test Product').click();
         await page.locator('#paidAmount').fill('200');
         await page.locator('#checkout').click();
