@@ -3,7 +3,19 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const target = process.env.TARGET_URL || 'https://nbbntools.my.id/';
+const target = process.env.TARGET_URL || 'http://127.0.0.1:4173/';
+
+// This suite intentionally clears and mutates cashier localStorage. Refuse remote
+// origins by default so an accidental manual run cannot destroy real user data.
+const targetUrl = new URL(target);
+const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+if (!localHosts.has(targetUrl.hostname) && process.env.ALLOW_DESTRUCTIVE_REMOTE_TESTS !== 'true') {
+  throw new Error(
+    `Refusing destructive browser tests against remote origin "${targetUrl.origin}". ` +
+    'Run against the locally served checkout or an isolated test deployment. ' +
+    'Remote override requires ALLOW_DESTRUCTIVE_REMOTE_TESTS=true.'
+  );
+}
 const out = path.resolve('browser-evidence');
 fs.mkdirSync(out, { recursive: true });
 
