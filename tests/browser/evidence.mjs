@@ -31,6 +31,34 @@ try {
   const title = await page.title();
   report.checks.push({ name: 'page_has_title', pass: title.trim().length > 0, value: title });
 
+  // PWA foundation checks: manifest response, expected metadata, and service-worker activation.
+  const pwa = await page.evaluate(async () => {
+    const result = { manifestHttp: false, manifestValid: false, workerHttp: false, serviceWorkerSupported: 'serviceWorker' in navigator, serviceWorkerActivated: false, errors: [] };
+    try {
+      const manifestResponse = await fetch('/manifest.json', { cache: 'no-store' });
+      result.manifestHttp = manifestResponse.ok;
+      if (manifestResponse.ok) {
+        const manifest = await manifestResponse.json();
+        result.manifestValid = manifest.name === 'NBBNTOOLS — Tools Online' && manifest.start_url === '/' && manifest.scope === '/' && Array.isArray(manifest.icons) && manifest.icons.length >= 1;
+      }
+    } catch (error) { result.errors.push('manifest: ' + String(error)); }
+    try {
+      const workerResponse = await fetch('/service-worker.js', { cache: 'no-store' });
+      result.workerHttp = workerResponse.ok;
+      if (result.serviceWorkerSupported && workerResponse.ok && location.protocol !== 'file:') {
+        const registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+        await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('service worker activation timeout')), 10000))]);
+        result.serviceWorkerActivated = Boolean(registration.active || registration.waiting || registration.installing);
+      }
+    } catch (error) { result.errors.push('service worker: ' + String(error)); }
+    return result;
+  });
+  report.checks.push({ name: 'pwa_manifest_http', pass: pwa.manifestHttp });
+  report.checks.push({ name: 'pwa_manifest_metadata', pass: pwa.manifestValid });
+  report.checks.push({ name: 'pwa_service_worker_http', pass: pwa.workerHttp });
+  report.checks.push({ name: 'pwa_service_worker_supported', pass: pwa.serviceWorkerSupported });
+  report.checks.push({ name: 'pwa_service_worker_activated', pass: pwa.serviceWorkerActivated, errors: pwa.errors });
+
   const toolCount = await page.locator('.card').count();
   report.checks.push({ name: 'homepage_has_15_tool_cards', pass: toolCount === 15, actual: toolCount });
 
