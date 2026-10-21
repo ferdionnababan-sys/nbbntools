@@ -298,6 +298,32 @@ try {
   const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
   report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
 
+  // A product without sales history must be permanently deleted and removed from localStorage.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'delete-no-history-test', name: 'Delete Without History', category: 'Testing', barcode: 'DELETE-NO-HISTORY', cost: 10, price: 20, stock: 3, active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="products"]').click();
+  const noHistoryRow = page.locator('#productsTable tr').filter({ hasText: 'Delete Without History' });
+  page.once('dialog', dialog => dialog.accept());
+  await noHistoryRow.locator('button[data-action="delete"]').click();
+  await page.waitForFunction(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    return !db.products.some(p => p.id === 'delete-no-history-test');
+  });
+  const permanentDeleteResult = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    return { stored: db.products.some(p => p.id === 'delete-no-history-test'), visible: [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Delete Without History')) };
+  });
+  report.checks.push({
+    name: 'cashier_product_without_history_is_permanently_deleted',
+    pass: !permanentDeleteResult.stored && !permanentDeleteResult.visible,
+    actual: permanentDeleteResult
+  });
+
   // Invalid backup must be rejected when two products reuse the same normalized barcode.
   // Existing cashier data must remain unchanged after rejection.
   const duplicateBarcodeBackup = {
