@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1020">
+<title>Offline — NBBNTOOLS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b1020;color:#f8fafc;font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}.card{width:min(520px,100%);padding:30px;border:1px solid #303957;border-radius:24px;background:linear-gradient(145deg,#151c32,#101629);text-align:center}.logo{display:grid;place-items:center;margin:0 auto 18px;width:70px;height:70px;border-radius:20px;background:linear-gradient(135deg,#635bff,#22d3ee);font-weight:950;font-size:32px}.muted{color:#a8b1c2}.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px}a,button{border:0;border-radius:12px;padding:12px 16px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none}a{background:#635bff;color:white}button{background:#25304c;color:#f8fafc}
+</style>
+</head>
+<body><main class="card"><div class="logo">N</div><h1>Kamu sedang offline</h1><p class="muted">Koneksi internet tidak tersedia atau halaman ini belum pernah dibuka saat online. Kasir Digital yang sudah dimuat mungkin tetap bisa digunakan; halaman online akan tersedia kembali setelah koneksi pulih.</p><div class="actions"><button id="retry" type="button">Coba lagi</button><a href="/kasir/">Buka Kasir Digital</a></div></main><script>document.getElementById("retry").addEventListener("click",()=>location.reload())</script></body>
+</html>

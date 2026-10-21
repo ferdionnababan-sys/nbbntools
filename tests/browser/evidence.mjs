@@ -31,6 +31,141 @@ try {
   const title = await page.title();
   report.checks.push({ name: 'page_has_title', pass: title.trim().length > 0, value: title });
 
+  // PWA foundation checks: manifest response, expected metadata, and service-worker activation.
+  const pwa = await page.evaluate(async () => {
+    const result = { manifestHttp: false, manifestValid: false, iconPngsValid: false, workerHttp: false, serviceWorkerSupported: 'serviceWorker' in navigator, serviceWorkerActivated: false, errors: [] };
+    try {
+      const manifestResponse = await fetch('/manifest.json', { cache: 'no-store' });
+      result.manifestHttp = manifestResponse.ok;
+      if (manifestResponse.ok) {
+        const manifest = await manifestResponse.json();
+        result.manifestValid = manifest.name === 'NBBNTOOLS — Tools Online' && manifest.start_url === '/' && manifest.scope === '/' && Array.isArray(manifest.icons) && manifest.icons.some(icon => icon.sizes === '192x192' && icon.type === 'image/png') && manifest.icons.some(icon => icon.sizes === '512x512' && icon.type === 'image/png');
+        const pngIcons = manifest.icons.filter(icon => icon.type === 'image/png' && ['192x192', '512x512'].includes(icon.sizes));
+        const iconResults = await Promise.all(pngIcons.map(async icon => { const response = await fetch(icon.src, { cache: 'no-store' }); const bytes = new Uint8Array(await response.arrayBuffer()); return response.ok && (response.headers.get('content-type') || '').includes('image/png') && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71; }));
+        result.iconPngsValid = pngIcons.length >= 2 && iconResults.every(Boolean);
+      }
+    } catch (error) { result.errors.push('manifest: ' + String(error)); }
+    try {
+      const workerResponse = await fetch('/service-worker.js', { cache: 'no-store' });
+      result.workerHttp = workerResponse.ok;
+      if (result.serviceWorkerSupported && workerResponse.ok && location.protocol !== 'file:') {
+        const registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+        await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error('service worker activation timeout')), 10000))]);
+        result.serviceWorkerActivated = Boolean(registration.active || registration.waiting || registration.installing);
+      }
+    } catch (error) { result.errors.push('service worker: ' + String(error)); }
+    return result;
+  });
+  report.checks.push({ name: 'pwa_manifest_http', pass: pwa.manifestHttp });
+  report.checks.push({ name: 'pwa_manifest_metadata', pass: pwa.manifestValid });
+  report.checks.push({ name: 'pwa_png_icons_valid', pass: pwa.iconPngsValid });
+  report.checks.push({ name: 'pwa_service_worker_http', pass: pwa.workerHttp });
+  report.checks.push({ name: 'pwa_service_worker_supported', pass: pwa.serviceWorkerSupported });
+  report.checks.push({ name: 'pwa_service_worker_activated', pass: pwa.serviceWorkerActivated, errors: pwa.errors });
+
+  // Verify actual offline navigation from the installed service-worker cache.
+  if (pwa.serviceWorkerActivated) {
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 10000 });
+      await context.setOffline(true);
+      const offlineHomeResponse = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const offlineHomeTitle = await page.title();
+      report.checks.push({ name: 'pwa_homepage_loads_from_cache_offline', pass: Boolean(offlineHomeResponse && offlineHomeResponse.ok()) && offlineHomeTitle.includes('NBBNTOOLS'), status: offlineHomeResponse?.status() ?? null, title: offlineHomeTitle });
+      const offlineCashierResponse = await page.goto(new URL('/kasir/', target).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const offlineCashierLoaded = await page.locator('#productGrid').count() === 1;
+      report.checks.push({ name: 'pwa_cashier_shell_loads_from_cache_offline', pass: Boolean(offlineCashierResponse && offlineCashierResponse.ok()) && offlineCashierLoaded, status: offlineCashierResponse?.status() ?? null, cashierShellLoaded: offlineCashierLoaded });
+      if (offlineCashierLoaded) {
+        await page.locator('button[data-panel="products"]').click();
+        await page.locator('#addProduct').click();
+        await page.locator('#pName').fill('Offline Persistence Test Product');
+        await page.locator('#pCategory').fill('Offline Test');
+        await page.locator('#pBarcode').fill('OFFLINE-PERSIST-001');
+        await page.locator('#pCost').fill('100');
+        await page.locator('#pPrice').fill('200');
+        await page.locator('#pStock').fill('2');
+        await page.locator('#productForm button[type="submit"]').click();
+        await page.locator('#productsTable').getByText('Offline Persistence Test Product').waitFor({ timeout: 8000 });
+        const offlineProductCreated = await page.locator('#productsTable tr').filter({ hasText: 'Offline Persistence Test Product' }).count() === 1;
+        report.checks.push({ name: 'cashier_can_create_product_while_offline', pass: offlineProductCreated });
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.locator('button[data-panel="products"]').click();
+        const offlineProductAfterReload = await page.locator('#productsTable tr').filter({ hasText: 'Offline Persistence Test Product' }).count();
+        const offlineProductStored = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{"products":[]}');
+          return db.products.some(product => product.barcode === 'OFFLINE-PERSIST-001');
+        });
+        report.checks.push({ name: 'cashier_offline_product_persists_after_offline_reload', pass: offlineProductAfterReload === 1 && offlineProductStored, visibleAfterReload: offlineProductAfterReload, stored: offlineProductStored });
+
+        // Verify a complete local sale while offline, including stock/history persistence across reload.
+        const beforeOfflineSale = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          return { transactions: (db.transactions || []).length, stock: product?.stock ?? null };
+        });
+        await page.locator('button[data-panel="sale"]').click();
+        await page.locator('#productGrid').getByText('Offline Persistence Test Product').click();
+        await page.locator('#paidAmount').fill('200');
+        await page.locator('#checkout').click();
+        await page.waitForFunction((before) => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          return (db.transactions || []).length === before + 1;
+        }, beforeOfflineSale.transactions, { timeout: 8000 });
+        const offlineSaleState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          return { transactions: (db.transactions || []).length, stock: product?.stock ?? null, sale: (db.transactions || []).find(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product')) || null };
+        });
+        const offlineSaleRecorded = offlineSaleState.transactions === beforeOfflineSale.transactions + 1 && offlineSaleState.stock === 1 && Boolean(offlineSaleState.sale) && offlineSaleState.sale.total === 200;
+        report.checks.push({ name: 'cashier_can_checkout_sale_while_offline', pass: offlineSaleRecorded, transactionCount: offlineSaleState.transactions, stock: offlineSaleState.stock, total: offlineSaleState.sale?.total ?? null });
+
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.locator('button[data-panel="history"]').click();
+        const offlineSaleHistoryVisible = await page.locator('#historyTable tr').count() === 1;
+        const offlineSaleAfterReload = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sale = (db.transactions || []).find(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { stock: product?.stock ?? null, total: sale?.total ?? null };
+        });
+        report.checks.push({ name: 'cashier_offline_sale_history_and_stock_persist_after_reload', pass: offlineSaleHistoryVisible && offlineSaleAfterReload.stock === 1 && offlineSaleAfterReload.total === 200, historyVisible: offlineSaleHistoryVisible, stock: offlineSaleAfterReload.stock, total: offlineSaleAfterReload.total });
+
+        // Returning online must not duplicate or erase a sale completed while offline.
+        const offlineCommittedState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sales = (db.transactions || []).filter(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { transactionCount: (db.transactions || []).length, stock: product?.stock ?? null, matchingSales: sales.length, total: sales[0]?.total ?? null };
+        });
+        await context.setOffline(false);
+        await page.goto(new URL('/kasir/', target).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const reconnectedState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sales = (db.transactions || []).filter(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { transactionCount: (db.transactions || []).length, stock: product?.stock ?? null, matchingSales: sales.length, total: sales[0]?.total ?? null };
+        });
+        report.checks.push({
+          name: 'cashier_reconnect_preserves_offline_sale_without_duplicate',
+          pass: reconnectedState.transactionCount === offlineCommittedState.transactionCount &&
+            reconnectedState.stock === offlineCommittedState.stock &&
+            reconnectedState.matchingSales === 1 &&
+            reconnectedState.total === 200,
+          beforeReconnect: offlineCommittedState,
+          afterReconnect: reconnectedState
+        });
+      }
+    } catch (error) {
+      report.checks.push({ name: 'pwa_offline_navigation_checks', pass: false, error: String(error) });
+    } finally {
+      await context.setOffline(false);
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    }
+  } else {
+    report.checks.push({ name: 'pwa_homepage_loads_from_cache_offline', pass: false, reason: 'service worker did not activate' });
+    report.checks.push({ name: 'pwa_cashier_shell_loads_from_cache_offline', pass: false, reason: 'service worker did not activate' });
+  }
+
   const toolCount = await page.locator('.card').count();
   report.checks.push({ name: 'homepage_has_15_tool_cards', pass: toolCount === 15, actual: toolCount });
 
@@ -166,6 +301,40 @@ try {
   await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
   await page.locator('#productModal [data-close="productModal"]').first().click();
 
+  // A failed database write during checkout must preserve persisted stock/history and keep the cart recoverable.
+  await page.locator('button[data-panel="sale"]').click();
+  await page.locator('#productGrid [data-add]').filter({ hasText: 'Browser Test Product' }).click();
+  await page.locator('#paidAmount').fill('1000');
+  const checkoutBeforeStorageFailure = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    const product = (db.products || []).find(item => item.barcode === '0012345678905');
+    return { stock: product?.stock ?? null, transactions: (db.transactions || []).length };
+  });
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'nbbntools_kasir_v1') throw new DOMException('quota test', 'QuotaExceededError');
+      return window.__originalStorageSetItem.call(this, key, value);
+    };
+  });
+  await page.locator('#checkout').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const checkoutAfterStorageFailure = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    const product = (db.products || []).find(item => item.barcode === '0012345678905');
+    return { stock: product?.stock ?? null, transactions: (db.transactions || []).length, cartItems: document.querySelectorAll('#cartList .cart-item').length };
+  });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  report.checks.push({
+    name: 'cashier_checkout_storage_failure_preserves_stock_history_and_cart',
+    pass: checkoutAfterStorageFailure.stock === checkoutBeforeStorageFailure.stock &&
+      checkoutAfterStorageFailure.transactions === checkoutBeforeStorageFailure.transactions &&
+      checkoutAfterStorageFailure.cartItems === 1,
+    before: checkoutBeforeStorageFailure,
+    after: checkoutAfterStorageFailure
+  });
+  await page.locator('#clearCart').click();
+
   // Unknown barcode must not add a product; a registered barcode must add the right product.
   await page.locator('button[data-panel="sale"]').click();
   await page.evaluate(() => { window.__mockBarcodeValue = 'NOT-REGISTERED'; });
@@ -179,6 +348,25 @@ try {
   await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
   const matchedCart = await page.locator('#cartList').getByText('Browser Test Product').count();
   report.checks.push({ name: 'cashier_registered_barcode_adds_matching_product', pass: matchedCart > 0, actual: matchedCart });
+
+  // Ambiguous duplicate barcodes must never auto-add an arbitrary product to the cart.
+  await page.locator('#clearCart').click();
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'duplicate-scan-product', name: 'Duplicate Scan Product', category: 'Testing', barcode: '0012345678905', cost: 100, price: 300, stock: 4, active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { window.__mockBarcodeValue = '0012345678905'; });
+  await page.locator('button[data-panel="sale"]').click();
+  await page.locator('#scanBarcodeBtn').click();
+  await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Barcode duplikat'));
+  const duplicateScanState = await page.evaluate(() => ({ cartItems: document.querySelectorAll('#cartList .cart-item').length, toast: document.querySelector('#toast')?.textContent || '' }));
+  report.checks.push({ name: 'cashier_duplicate_scanned_barcode_does_not_auto_add_product', pass: duplicateScanState.cartItems === 0 && duplicateScanState.toast.includes('Barcode duplikat'), actual: duplicateScanState });
+  // Restore a known product to the cart so the following checkout regression remains meaningful.
+  await page.locator('#productGrid').getByText('Browser Test Product').click();
 
   // Complete a sale and confirm it appears in transaction history.
   await page.locator('#paidAmount').fill('1000');
@@ -270,6 +458,32 @@ try {
   const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
   report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
 
+  // A product without sales history must be permanently deleted and removed from localStorage.
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'delete-no-history-test', name: 'Delete Without History', category: 'Testing', barcode: 'DELETE-NO-HISTORY', cost: 10, price: 20, stock: 3, active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="products"]').click();
+  const noHistoryRow = page.locator('#productsTable tr').filter({ hasText: 'Delete Without History' });
+  page.once('dialog', dialog => dialog.accept());
+  await noHistoryRow.locator('button[data-action="delete"]').click();
+  await page.waitForFunction(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    return !db.products.some(p => p.id === 'delete-no-history-test');
+  });
+  const permanentDeleteResult = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    return { stored: db.products.some(p => p.id === 'delete-no-history-test'), visible: [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Delete Without History')) };
+  });
+  report.checks.push({
+    name: 'cashier_product_without_history_is_permanently_deleted',
+    pass: !permanentDeleteResult.stored && !permanentDeleteResult.visible,
+    actual: permanentDeleteResult
+  });
+
   // Invalid backup must be rejected when two products reuse the same normalized barcode.
   // Existing cashier data must remain unchanged after rejection.
   const duplicateBarcodeBackup = {
@@ -322,11 +536,89 @@ try {
   const unsafePriceNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.every(p => p.id !== 'unsafe-price-product'));
   report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
 
+  // A valid backup restore must preserve product and transaction records while applying its settings.
+  const validRestoreBackup = {
+    backupFormat: 'nbbntools-kasir',
+    backupVersion: 1,
+    backupAt: new Date().toISOString(),
+    products: [{ id: 'restore-roundtrip-product', name: 'Restore Roundtrip Product', category: 'Test', barcode: 'RESTORE-ROUNDTRIP-01', cost: 50, price: 100, stock: 4, emoji: '🧪', active: true }],
+    transactions: [{ id: 'restore-roundtrip-transaction', number: 'RESTORE-ROUNDTRIP-TX', date: new Date().toISOString(), day: new Date().toISOString().slice(0, 10), customer: 'Test', method: 'Tunai', items: [{ id: 'restore-roundtrip-product', name: 'Restore Roundtrip Product', qty: 1, price: 100, cost: 50, subtotal: 100 }], subtotal: 100, discount: 0, tax: 0, total: 100, paid: 100, due: 0, change: 0, cost: 50 }],
+    stockMovements: [],
+    settings: { storeName: 'Backup Restore Verification' }
+  };
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#restoreFile').setInputFiles({
+    name: 'valid-roundtrip-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(validRestoreBackup))
+  });
+  await page.waitForFunction(() => {
+    const text = document.querySelector('#toast')?.textContent || '';
+    return text.includes('Backup berhasil dipulihkan') || text.includes('Backup tidak valid atau rusak');
+  });
+  const validRestoreResult = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    return { products: db.products.length, transactions: db.transactions.length, storeName: db.settings?.storeName, productId: db.products[0]?.id, transactionId: db.transactions[0]?.id, toast: document.querySelector('#toast')?.textContent || '' };
+  });
+  report.checks.push({
+    name: 'cashier_valid_backup_restore_preserves_records',
+    pass: validRestoreResult.products === 1 && validRestoreResult.transactions === 1 && validRestoreResult.storeName === 'Backup Restore Verification' && validRestoreResult.productId === 'restore-roundtrip-product' && validRestoreResult.transactionId === 'restore-roundtrip-transaction' && validRestoreResult.toast.includes('Backup berhasil dipulihkan'),
+    expected: { products: 1, transactions: 1, storeName: 'Backup Restore Verification' },
+    actual: validRestoreResult
+  });
+
+  // A valid restore whose database write fails must preserve the previously committed database.
+  const restoreFailureBackup = {
+    backupFormat: 'nbbntools-kasir',
+    backupVersion: 1,
+    backupAt: new Date().toISOString(),
+    products: [{ id: 'restore-failure-product', name: 'Must Not Replace Existing Data', category: 'Test', barcode: 'RESTORE-FAILURE-01', cost: 1, price: 2, stock: 3, active: true }],
+    transactions: [],
+    stockMovements: [],
+    settings: { storeName: 'Must Not Replace Existing Settings' }
+  };
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'nbbntools_kasir_v1') throw new DOMException('quota test', 'QuotaExceededError');
+      return window.__originalStorageSetItem.call(this, key, value);
+    };
+  });
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#restoreFile').setInputFiles({
+    name: 'restore-storage-failure-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(restoreFailureBackup))
+  });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const restoreStorageFailureState = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    return {
+      productId: db.products[0]?.id,
+      transactionId: db.transactions[0]?.id,
+      storeName: db.settings?.storeName,
+      replacementProductPresent: db.products.some(p => p.id === 'restore-failure-product')
+    };
+  });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  report.checks.push({
+    name: 'cashier_restore_storage_failure_preserves_previous_database',
+    pass: restoreStorageFailureState.productId === 'restore-roundtrip-product' &&
+      restoreStorageFailureState.transactionId === 'restore-roundtrip-transaction' &&
+      restoreStorageFailureState.storeName === 'Backup Restore Verification' &&
+      !restoreStorageFailureState.replacementProductPresent,
+    actual: restoreStorageFailureState
+  });
+
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
     const data = JSON.parse(localStorage.getItem(key));
-    const product = data.products.find(p => p.name === 'Browser Test Product');
+    let product = data.products.find(p => p.name === 'Browser Test Product');
+    if (!product) {
+      product = { id: 'overflow-stock-test-product', name: 'Browser Test Product', category: 'Testing', barcode: 'OVERFLOW-STOCK-TEST', cost: 1, price: 2, stock: 0, emoji: '🧪', active: true };
+      data.products.push(product);
+    }
     product.stock = Number.MAX_SAFE_INTEGER;
     localStorage.setItem(key, JSON.stringify(data));
   });
