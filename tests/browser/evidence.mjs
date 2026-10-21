@@ -635,6 +635,26 @@ try {
     actual: { productId: unsupportedVersionState.products?.[0]?.id, storeName: unsupportedVersionState.settings?.storeName }
   });
 
+  // Partial backup metadata must be rejected; legacy backups are only compatible when both fields are absent.
+  const partialMetadataBackups = [
+    { backupFormat: 'nbbntools-kasir', products: [], transactions: [], stockMovements: [], settings: { storeName: 'Partial Version Missing' } },
+    { backupVersion: 1, products: [], transactions: [], stockMovements: [], settings: { storeName: 'Partial Format Missing' } }
+  ];
+  for (let index = 0; index < partialMetadataBackups.length; index++) {
+    await page.locator('#restoreFile').setInputFiles({
+      name: `partial-metadata-backup-${index}.json`,
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(partialMetadataBackups[index]))
+    });
+    await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  }
+  const partialMetadataState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_partial_metadata_without_replacing_data',
+    pass: partialMetadataState.products?.[0]?.id === 'restore-roundtrip-product' && partialMetadataState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: partialMetadataState.products?.[0]?.id, storeName: partialMetadataState.settings?.storeName }
+  });
+
   // Malformed stock movement entries must be rejected before restore changes local data.
   const malformedMovementBackup = {
     backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
