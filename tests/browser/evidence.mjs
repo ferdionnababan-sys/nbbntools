@@ -547,6 +547,18 @@ try {
   const unsafePriceNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.every(p => p.id !== 'unsafe-price-product'));
   report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
 
+  // Reject transaction money values that exceed safe integer precision.
+  const unsafeTransactionBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [],
+    transactions: [{ id: 'unsafe-transaction-total', number: 'UNSAFE-TOTAL', date: new Date().toISOString(), day: new Date().toISOString().slice(0, 10), items: [{ id: 'old-product', name: 'Old Product', qty: 1, price: 9007199254740992, cost: 1, subtotal: 9007199254740992 }], subtotal: 9007199254740992, discount: 0, tax: 0, total: 9007199254740992, paid: 9007199254740992, due: 0, change: 0, cost: 1 }],
+    stockMovements: [], settings: { storeName: 'Unsafe Transaction Backup' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'unsafe-transaction-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(unsafeTransactionBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const unsafeTransactionNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}').settings?.storeName === 'Backup Restore Verification');
+  report.checks.push({ name: 'cashier_backup_rejects_unsafe_transaction_money_without_replacing_data', pass: unsafeTransactionNotApplied, actual: unsafeTransactionNotApplied });
+
   // A valid backup restore must preserve product and transaction records while applying its settings.
   const validRestoreBackup = {
     backupFormat: 'nbbntools-kasir',
