@@ -3,7 +3,18 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const target = process.env.TARGET_URL || 'https://nbbntools.my.id/';
+const target = process.env.TARGET_URL || 'http://127.0.0.1:4173/';
+
+// This suite clears and mutates cashier localStorage. Refuse remote origins by default.
+const targetUrl = new URL(target);
+const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+if (!localHosts.has(targetUrl.hostname) && process.env.ALLOW_DESTRUCTIVE_REMOTE_TESTS !== 'true') {
+  throw new Error(
+    `Refusing destructive browser tests against remote origin "${targetUrl.origin}". ` +
+    'Run against the locally served checkout or an isolated test deployment. ' +
+    'Remote override requires ALLOW_DESTRUCTIVE_REMOTE_TESTS=true.'
+  );
+}
 const out = path.resolve('browser-evidence');
 fs.mkdirSync(out, { recursive: true });
 
@@ -608,6 +619,36 @@ try {
       restoreStorageFailureState.storeName === 'Backup Restore Verification' &&
       !restoreStorageFailureState.replacementProductPresent,
     actual: restoreStorageFailureState
+  });
+
+  // Unsupported backup version must be rejected without replacing current data.
+  const unsupportedVersionBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 999, backupAt: new Date().toISOString(),
+    products: [], transactions: [], stockMovements: [], settings: { storeName: 'Unsupported Version' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'unsupported-version-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(unsupportedVersionBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const unsupportedVersionState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_unsupported_version_without_replacing_data',
+    pass: unsupportedVersionState.products?.[0]?.id === 'restore-roundtrip-product' && unsupportedVersionState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: unsupportedVersionState.products?.[0]?.id, storeName: unsupportedVersionState.settings?.storeName }
+  });
+
+  // Malformed stock movement entries must be rejected before restore changes local data.
+  const malformedMovementBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [], transactions: [],
+    stockMovements: [{ id: 'bad-movement', date: 'not-a-date', productId: 'p1', productName: 'Bad movement', quantity: 1, note: '', stockAfter: 1 }],
+    settings: { storeName: 'Malformed Movement' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'malformed-stock-movement-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(malformedMovementBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const malformedMovementState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_malformed_stock_movements_without_replacing_data',
+    pass: malformedMovementState.products?.[0]?.id === 'restore-roundtrip-product' && malformedMovementState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: malformedMovementState.products?.[0]?.id, storeName: malformedMovementState.settings?.storeName }
   });
 
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
