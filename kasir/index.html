@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0f766e">
 <meta name="description" content="Kasir digital gratis untuk warung dan usaha kecil. Kelola produk, stok, transaksi, struk, dan laporan penjualan dari HP.">
 <meta name="robots" content="index,follow">
-<link rel="canonical" href="https://nbbntools.my.id/kasir/">
+<link rel="canonical" href="https://nbbntools.my.id/kasir/"><link rel="manifest" href="/manifest.json">
 <title>Kasir Digital — NBBNTOOLS</title>
 <style>
 :root{--bg:#f3f7f7;--surface:#fff;--ink:#172b2b;--muted:#647777;--line:#dce7e6;--brand:#0f766e;--brand2:#115e59;--soft:#e4f5f2;--orange:#f59e0b;--red:#dc2626;--green:#15803d;--shadow:0 10px 32px rgba(15,60,57,.08);--radius:18px}
@@ -208,5 +208,5 @@ if(!('serviceWorker' in navigator))$('connectionStatus').textContent='● Mode l
 window.addEventListener('online',()=>$('connectionStatus').textContent='● Online · data tetap lokal');window.addEventListener('offline',()=>$('connectionStatus').textContent='● Offline · data tetap lokal');
 })();
 </script>
-</body>
+<script>if('serviceWorker' in navigator && location.protocol==='https:'){window.addEventListener('load',()=>navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(()=>{}))}</script></body>
 </html>
