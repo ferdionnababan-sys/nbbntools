@@ -63,3 +63,45 @@ Keberadaan kontrol di atas tidak membuktikan seluruh skenario barcode, checkout,
 - Tidak dilakukan pengujian destruktif atau perubahan pada data produksi.
 - Website produksi belum dinyatakan terverifikasi langsung.
 - Tidak ada perubahan kode aplikasi pada commit audit ini; dokumen ini hanya mencatat hasil audit awal.
+
+
+## Audit lanjutan — Fase 2 dan validasi backup (21 Oktober 2026)
+
+### Pemetaan penyimpanan yang terkonfirmasi dari source
+
+File: `kasir/index.html`, konstanta `KEY`, fungsi `loadDB()`/`saveDB()`, serta fungsi `backup()`/`validateBackup()`/`restoreFile` handler.
+
+| Data | Penyimpanan yang terlihat | Catatan |
+|---|---|---|
+| Produk, barcode, harga modal/jual, stok, status aktif | `localStorage` dalam objek DB | Tidak ada isolasi akun/server pada source yang diperiksa |
+| Transaksi dan item transaksi | Objek DB yang sama | Riwayat dipakai oleh laporan dan struk |
+| Pergerakan stok | `db.stockMovements` | Dicadangkan; validasi tiap entri perlu diperdalam |
+| Pengaturan toko | `db.settings` | Disimpan lokal |
+| Keranjang dan keranjang tertahan | Keranjang aktif berada di memori; `heldCart` dapat disimpan di DB | Tidak tersinkron ke perangkat lain |
+| Backup | File JSON yang diunduh pengguna | Tidak ada backup server otomatis yang terlihat |
+| Laporan dan CSV | Dihitung dari data lokal lalu diunduh | Kebenaran laporan bergantung pada integritas data lokal |
+
+### MEDIUM — Validasi restore belum sepenuhnya memvalidasi metadata dan seluruh skema
+
+- Lokasi: `kasir/index.html`, fungsi `validateBackup(v)` dan handler `restoreFile`.
+- Bukti source: validator memeriksa array `products`/`transactions`, beberapa field numerik, ID duplikat, barcode duplikat, serta isi dasar item transaksi. Namun pada implementasi yang diperiksa, validasi tidak mewajibkan `backupFormat` dan `backupVersion` yang dikeluarkan oleh `backup()`; entri `stockMovements` juga hanya diterima jika berbentuk array, tanpa pemeriksaan struktur setiap entri.
+- Dampak: JSON yang bukan format backup resmi namun memenuhi sebagian struktur dapat diterima; data pergerakan stok yang rusak bisa masuk dan menghasilkan catatan yang tidak valid pada tampilan riwayat stok.
+- Rekomendasi: tambahkan tes regresi dengan backup metadata hilang/salah dan pergerakan stok malformed. Sebelum mengubah validator, pastikan kompatibilitas dengan backup lama yang sah; jangan menolak backup lama secara membabi buta. Validasi seluruh payload sebelum mengganti DB dan pastikan kegagalan penulisan tidak mengubah data lama.
+- Status tes: temuan berbasis source review; skenario ini belum diklaim lulus atau gagal melalui browser.
+
+### Pengamanan pengujian browser
+
+Pada 21 Oktober 2026, PR #38 diperbarui dengan commit `eea43acd323f3b1ed04b9518f474cad66f1ae978` pada `tests/browser/evidence.mjs`. Target default diarahkan ke server lokal dan pengujian destruktif menolak origin remote kecuali override eksplisit `ALLOW_DESTRUCTIVE_REMOTE_TESTS=true`.
+
+Workflow yang dilaporkan untuk commit tersebut:
+- NBBNTOOLS Site Check: **success**.
+- Browser Evidence (Playwright): **success**.
+
+Hasil ini memverifikasi workflow pada commit PR tersebut, bukan seluruh perilaku produksi atau seluruh skenario keamanan. Jangan menjalankan pengujian destruktif pada data bisnis produksi.
+
+### Batas yang tetap berlaku
+
+- Backend autentikasi/otorisasi dan isolasi akun belum ditemukan pada source kasir yang diperiksa.
+- Kepemilikan domain/hosting belum dapat dibuktikan dari repository.
+- Tidak ada perubahan data kasir produksi.
+- Website produksi belum dinyatakan terverifikasi secara menyeluruh.
