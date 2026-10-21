@@ -411,7 +411,7 @@ try {
     const expected = {
       revenue: transactions.reduce((sum, t) => sum + (Number(t.total) || 0), 0),
       cost: transactions.reduce((sum, t) => sum + (Number(t.transactionCost) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.cost) || 0) * (Number(item.qty ?? item.quantity) || 0), 0) : 0)), 0),
-      profit: transactions.reduce((sum, t) => sum + (Number(t.subtotal) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.subtotal) || 0), 0) : 0)) - (Number(t.discount) || 0) - (Number(t.transactionCost) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.cost) || 0) * (Number(item.quantity) || 0), 0) : 0)), 0),
+      profit: transactions.reduce((sum, t) => sum + (Number(t.subtotal) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.subtotal) || 0), 0) : 0)) - (Number(t.discount) || 0) - (Number(t.transactionCost) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.cost) || 0) * (Number(item.qty ?? item.quantity) || 0), 0) : 0)), 0),
       count: transactions.length
     };
     const displayed = {
