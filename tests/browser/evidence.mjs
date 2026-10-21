@@ -33,13 +33,16 @@ try {
 
   // PWA foundation checks: manifest response, expected metadata, and service-worker activation.
   const pwa = await page.evaluate(async () => {
-    const result = { manifestHttp: false, manifestValid: false, workerHttp: false, serviceWorkerSupported: 'serviceWorker' in navigator, serviceWorkerActivated: false, errors: [] };
+    const result = { manifestHttp: false, manifestValid: false, iconPngsValid: false, workerHttp: false, serviceWorkerSupported: 'serviceWorker' in navigator, serviceWorkerActivated: false, errors: [] };
     try {
       const manifestResponse = await fetch('/manifest.json', { cache: 'no-store' });
       result.manifestHttp = manifestResponse.ok;
       if (manifestResponse.ok) {
         const manifest = await manifestResponse.json();
-        result.manifestValid = manifest.name === 'NBBNTOOLS — Tools Online' && manifest.start_url === '/' && manifest.scope === '/' && Array.isArray(manifest.icons) && manifest.icons.length >= 1;
+        result.manifestValid = manifest.name === 'NBBNTOOLS — Tools Online' && manifest.start_url === '/' && manifest.scope === '/' && Array.isArray(manifest.icons) && manifest.icons.some(icon => icon.sizes === '192x192' && icon.type === 'image/png') && manifest.icons.some(icon => icon.sizes === '512x512' && icon.type === 'image/png');
+        const pngIcons = manifest.icons.filter(icon => icon.type === 'image/png' && ['192x192', '512x512'].includes(icon.sizes));
+        const iconResults = await Promise.all(pngIcons.map(async icon => { const response = await fetch(icon.src, { cache: 'no-store' }); const bytes = new Uint8Array(await response.arrayBuffer()); return response.ok && (response.headers.get('content-type') || '').includes('image/png') && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71; }));
+        result.iconPngsValid = pngIcons.length >= 2 && iconResults.every(Boolean);
       }
     } catch (error) { result.errors.push('manifest: ' + String(error)); }
     try {
@@ -55,6 +58,7 @@ try {
   });
   report.checks.push({ name: 'pwa_manifest_http', pass: pwa.manifestHttp });
   report.checks.push({ name: 'pwa_manifest_metadata', pass: pwa.manifestValid });
+  report.checks.push({ name: 'pwa_png_icons_valid', pass: pwa.iconPngsValid });
   report.checks.push({ name: 'pwa_service_worker_http', pass: pwa.workerHttp });
   report.checks.push({ name: 'pwa_service_worker_supported', pass: pwa.serviceWorkerSupported });
   report.checks.push({ name: 'pwa_service_worker_activated', pass: pwa.serviceWorkerActivated, errors: pwa.errors });

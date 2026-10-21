@@ -1,5 +1,5 @@
 /* NBBNTOOLS PWA foundation. Cache only public app pages/assets; never cache arbitrary endpoints. */
-const CACHE_NAME = "nbbntools-shell-v2";
+const CACHE_NAME = "nbbntools-shell-v3";
 const APP_SHELL = [
   "/",
   "/kasir/",
@@ -7,7 +7,10 @@ const APP_SHELL = [
   "/manifest.json",
   "/assets/favicon.svg",
   "/assets/app-icon.svg",
-  "/assets/app-icon-maskable.svg"
+  "/assets/app-icon-maskable.svg",
+  "/assets/app-icon-192.png",
+  "/assets/app-icon-512.png",
+  "/assets/app-icon-maskable.png"
 ];
 
 function isPublicPage(pathname) {
