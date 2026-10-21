@@ -512,7 +512,11 @@ try {
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
     const data = JSON.parse(localStorage.getItem(key));
-    const product = data.products.find(p => p.name === 'Browser Test Product');
+    let product = data.products.find(p => p.name === 'Browser Test Product');
+    if (!product) {
+      product = { id: 'overflow-stock-test-product', name: 'Browser Test Product', category: 'Testing', barcode: 'OVERFLOW-STOCK-TEST', cost: 1, price: 2, stock: 0, emoji: '🧪', active: true };
+      data.products.push(product);
+    }
     product.stock = Number.MAX_SAFE_INTEGER;
     localStorage.setItem(key, JSON.stringify(data));
   });
