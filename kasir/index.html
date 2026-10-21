@@ -195,8 +195,8 @@ function validateBackup(v){
 if(!v||typeof v!=='object'||Array.isArray(v)||!Array.isArray(v.products)||!Array.isArray(v.transactions)||!v.settings||typeof v.settings!=='object'||Array.isArray(v.settings))return false;
 // Keep legacy backups compatible when metadata is absent, but reject unsupported
 // metadata when it is present so unrelated JSON cannot masquerade as this format.
-if(v.backupFormat!==undefined&&v.backupFormat!=='nbbntools-kasir')return false;
-if(v.backupVersion!==undefined&&v.backupVersion!==1)return false;
+// Legacy backups may omit both metadata fields; if either is present, require the complete supported pair.
+if((v.backupFormat!==undefined||v.backupVersion!==undefined)&&(v.backupFormat!=='nbbntools-kasir'||v.backupVersion!==1))return false;
 const productIds=new Set(),barcodes=new Set();
 for(const p of v.products){
 if(!p||typeof p!=='object'||Array.isArray(p)||typeof p.id!=='string'||!p.id||typeof p.name!=='string'||!p.name.trim()||!Number.isSafeInteger(Number(p.price))||Number(p.price)<0||!Number.isSafeInteger(Number(p.cost))||Number(p.cost)<0||!Number.isSafeInteger(Number(p.stock))||Number(p.stock)<0||productIds.has(p.id))return false;
