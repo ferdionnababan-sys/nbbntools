@@ -129,6 +129,31 @@ try {
           return { stock: product?.stock ?? null, total: sale?.total ?? null };
         });
         report.checks.push({ name: 'cashier_offline_sale_history_and_stock_persist_after_reload', pass: offlineSaleHistoryVisible && offlineSaleAfterReload.stock === 1 && offlineSaleAfterReload.total === 200, historyVisible: offlineSaleHistoryVisible, stock: offlineSaleAfterReload.stock, total: offlineSaleAfterReload.total });
+
+        // Returning online must not duplicate or erase a sale completed while offline.
+        const offlineCommittedState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sales = (db.transactions || []).filter(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { transactionCount: (db.transactions || []).length, stock: product?.stock ?? null, matchingSales: sales.length, total: sales[0]?.total ?? null };
+        });
+        await context.setOffline(false);
+        await page.goto(new URL('/kasir/', target).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const reconnectedState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sales = (db.transactions || []).filter(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { transactionCount: (db.transactions || []).length, stock: product?.stock ?? null, matchingSales: sales.length, total: sales[0]?.total ?? null };
+        });
+        report.checks.push({
+          name: 'cashier_reconnect_preserves_offline_sale_without_duplicate',
+          pass: reconnectedState.transactionCount === offlineCommittedState.transactionCount &&
+            reconnectedState.stock === offlineCommittedState.stock &&
+            reconnectedState.matchingSales === 1 &&
+            reconnectedState.total === 200,
+          beforeReconnect: offlineCommittedState,
+          afterReconnect: reconnectedState
+        });
       }
     } catch (error) {
       report.checks.push({ name: 'pwa_offline_navigation_checks', pass: false, error: String(error) });
@@ -275,6 +300,40 @@ try {
   report.checks.push({ name: 'cashier_product_save_failure_rolls_back', pass: rollbackCount === 0, actual: rollbackCount });
   await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
   await page.locator('#productModal [data-close="productModal"]').first().click();
+
+  // A failed database write during checkout must preserve persisted stock/history and keep the cart recoverable.
+  await page.locator('button[data-panel="sale"]').click();
+  await page.locator('#productGrid [data-add="0012345678905"]').click();
+  await page.locator('#paidAmount').fill('1000');
+  const checkoutBeforeStorageFailure = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    const product = (db.products || []).find(item => item.barcode === '0012345678905');
+    return { stock: product?.stock ?? null, transactions: (db.transactions || []).length };
+  });
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'nbbntools_kasir_v1') throw new DOMException('quota test', 'QuotaExceededError');
+      return window.__originalStorageSetItem.call(this, key, value);
+    };
+  });
+  await page.locator('#checkout').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const checkoutAfterStorageFailure = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    const product = (db.products || []).find(item => item.barcode === '0012345678905');
+    return { stock: product?.stock ?? null, transactions: (db.transactions || []).length, cartItems: document.querySelectorAll('#cartList .cart-item').length };
+  });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  report.checks.push({
+    name: 'cashier_checkout_storage_failure_preserves_stock_history_and_cart',
+    pass: checkoutAfterStorageFailure.stock === checkoutBeforeStorageFailure.stock &&
+      checkoutAfterStorageFailure.transactions === checkoutBeforeStorageFailure.transactions &&
+      checkoutAfterStorageFailure.cartItems === 1,
+    before: checkoutBeforeStorageFailure,
+    after: checkoutAfterStorageFailure
+  });
+  await page.locator('#clearCart').click();
 
   // Unknown barcode must not add a product; a registered barcode must add the right product.
   await page.locator('button[data-panel="sale"]').click();
