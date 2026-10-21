@@ -96,6 +96,38 @@ try {
           return db.products.some(product => product.barcode === 'OFFLINE-PERSIST-001');
         });
         report.checks.push({ name: 'cashier_offline_product_persists_after_offline_reload', pass: offlineProductAfterReload === 1 && offlineProductStored, visibleAfterReload: offlineProductAfterReload, stored: offlineProductStored });
+
+        // Verify a complete local sale while offline, including stock/history persistence across reload.
+        const beforeOfflineSale = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          return { transactions: (db.transactions || []).length, stock: product?.stock ?? null };
+        });
+        await page.locator('#productGrid').getByText('Offline Persistence Test Product').click();
+        await page.locator('#paidAmount').fill('200');
+        await page.locator('#checkout').click();
+        await page.waitForFunction((before) => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          return (db.transactions || []).length === before + 1;
+        }, beforeOfflineSale.transactions, { timeout: 8000 });
+        const offlineSaleState = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          return { transactions: (db.transactions || []).length, stock: product?.stock ?? null, sale: (db.transactions || []).find(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product')) || null };
+        });
+        const offlineSaleRecorded = offlineSaleState.transactions === beforeOfflineSale.transactions + 1 && offlineSaleState.stock === 1 && Boolean(offlineSaleState.sale) && offlineSaleState.sale.total === 200;
+        report.checks.push({ name: 'cashier_can_checkout_sale_while_offline', pass: offlineSaleRecorded, transactionCount: offlineSaleState.transactions, stock: offlineSaleState.stock, total: offlineSaleState.sale?.total ?? null });
+
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.locator('button[data-panel="history"]').click();
+        const offlineSaleHistoryVisible = await page.locator('#historyTable').getByText('Offline Persistence Test Product').count() > 0;
+        const offlineSaleAfterReload = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+          const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
+          const sale = (db.transactions || []).find(item => (item.items || []).some(line => line.name === 'Offline Persistence Test Product'));
+          return { stock: product?.stock ?? null, total: sale?.total ?? null };
+        });
+        report.checks.push({ name: 'cashier_offline_sale_history_and_stock_persist_after_reload', pass: offlineSaleHistoryVisible && offlineSaleAfterReload.stock === 1 && offlineSaleAfterReload.total === 200, historyVisible: offlineSaleHistoryVisible, stock: offlineSaleAfterReload.stock, total: offlineSaleAfterReload.total });
       }
     } catch (error) {
       report.checks.push({ name: 'pwa_offline_navigation_checks', pass: false, error: String(error) });
