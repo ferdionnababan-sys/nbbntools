@@ -208,6 +208,23 @@ try {
   const matchedCart = await page.locator('#cartList').getByText('Browser Test Product').count();
   report.checks.push({ name: 'cashier_registered_barcode_adds_matching_product', pass: matchedCart > 0, actual: matchedCart });
 
+  // Ambiguous duplicate barcodes must never auto-add an arbitrary product to the cart.
+  await page.locator('#clearCart').click();
+  await page.evaluate(() => {
+    const key = 'nbbntools_kasir_v1';
+    const db = JSON.parse(localStorage.getItem(key));
+    db.products.push({ id: 'duplicate-scan-product', name: 'Duplicate Scan Product', category: 'Testing', barcode: '0012345678905', cost: 100, price: 300, stock: 4, active: true });
+    localStorage.setItem(key, JSON.stringify(db));
+    window.__mockBarcodeValue = '0012345678905';
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('button[data-panel="sale"]').click();
+  await page.locator('#scanBarcodeBtn').click();
+  await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Barcode duplikat'));
+  const duplicateScanState = await page.evaluate(() => ({ cartItems: document.querySelectorAll('#cartList .cart-item').length, toast: document.querySelector('#toast')?.textContent || '' }));
+  report.checks.push({ name: 'cashier_duplicate_scanned_barcode_does_not_auto_add_product', pass: duplicateScanState.cartItems === 0 && duplicateScanState.toast.includes('Barcode duplikat'), actual: duplicateScanState });
+
   // Complete a sale and confirm it appears in transaction history.
   await page.locator('#paidAmount').fill('1000');
   await page.locator('#checkout').click();
