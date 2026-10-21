@@ -477,6 +477,38 @@ try {
   const unsafePriceNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.every(p => p.id !== 'unsafe-price-product'));
   report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
 
+  // A valid backup restore must preserve product and transaction records while applying its settings.
+  const validRestoreBackup = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    return {
+      backupFormat: 'nbbntools-kasir',
+      backupVersion: 1,
+      backupAt: new Date().toISOString(),
+      products: db.products,
+      transactions: db.transactions,
+      stockMovements: db.stockMovements || [],
+      settings: { ...(db.settings || {}), storeName: 'Backup Restore Verification' }
+    };
+  });
+  const restoreExpected = { products: validRestoreBackup.products.length, transactions: validRestoreBackup.transactions.length };
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#restoreFile').setInputFiles({
+    name: 'valid-roundtrip-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(validRestoreBackup))
+  });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup berhasil dipulihkan'));
+  const validRestoreResult = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    return { products: db.products.length, transactions: db.transactions.length, storeName: db.settings?.storeName };
+  });
+  report.checks.push({
+    name: 'cashier_valid_backup_restore_preserves_records',
+    pass: validRestoreResult.products === restoreExpected.products && validRestoreResult.transactions === restoreExpected.transactions && validRestoreResult.storeName === 'Backup Restore Verification',
+    expected: restoreExpected,
+    actual: validRestoreResult
+  });
+
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
