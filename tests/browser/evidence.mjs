@@ -3,7 +3,18 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const target = process.env.TARGET_URL || 'https://nbbntools.my.id/';
+const target = process.env.TARGET_URL || 'http://127.0.0.1:4173/';
+
+// This suite clears and mutates cashier localStorage. Refuse remote origins by default.
+const targetUrl = new URL(target);
+const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+if (!localHosts.has(targetUrl.hostname) && process.env.ALLOW_DESTRUCTIVE_REMOTE_TESTS !== 'true') {
+  throw new Error(
+    `Refusing destructive browser tests against remote origin "${targetUrl.origin}". ` +
+    'Run against the locally served checkout or an isolated test deployment. ' +
+    'Remote override requires ALLOW_DESTRUCTIVE_REMOTE_TESTS=true.'
+  );
+}
 const out = path.resolve('browser-evidence');
 fs.mkdirSync(out, { recursive: true });
 
@@ -536,6 +547,20 @@ try {
   const unsafePriceNotApplied = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1')).products.every(p => p.id !== 'unsafe-price-product'));
   report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
 
+  // Reject transaction money values that exceed safe integer precision.
+  const unsafeTransactionBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [],
+    transactions: [{ id: 'unsafe-transaction-total', number: 'UNSAFE-TOTAL', date: new Date().toISOString(), day: new Date().toISOString().slice(0, 10), items: [{ id: 'old-product', name: 'Old Product', qty: 1, price: 9007199254740992, cost: 1, subtotal: 9007199254740992 }], subtotal: 9007199254740992, discount: 0, tax: 0, total: 9007199254740992, paid: 9007199254740992, due: 0, change: 0, cost: 1 }],
+    stockMovements: [], settings: { storeName: 'Unsafe Transaction Backup' }
+  };
+  const unsafeTransactionBefore = await page.evaluate(() => localStorage.getItem('nbbntools_kasir_v1'));
+  await page.locator('#restoreFile').setInputFiles({ name: 'unsafe-transaction-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(unsafeTransactionBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const unsafeTransactionAfter = await page.evaluate(() => localStorage.getItem('nbbntools_kasir_v1'));
+  const unsafeTransactionNotApplied = unsafeTransactionAfter === unsafeTransactionBefore;
+  report.checks.push({ name: 'cashier_backup_rejects_unsafe_transaction_money_without_replacing_data', pass: unsafeTransactionNotApplied, actual: unsafeTransactionNotApplied });
+
   // A valid backup restore must preserve product and transaction records while applying its settings.
   const validRestoreBackup = {
     backupFormat: 'nbbntools-kasir',
@@ -608,6 +633,56 @@ try {
       restoreStorageFailureState.storeName === 'Backup Restore Verification' &&
       !restoreStorageFailureState.replacementProductPresent,
     actual: restoreStorageFailureState
+  });
+
+  // Unsupported backup version must be rejected without replacing current data.
+  const unsupportedVersionBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 999, backupAt: new Date().toISOString(),
+    products: [], transactions: [], stockMovements: [], settings: { storeName: 'Unsupported Version' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'unsupported-version-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(unsupportedVersionBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const unsupportedVersionState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_unsupported_version_without_replacing_data',
+    pass: unsupportedVersionState.products?.[0]?.id === 'restore-roundtrip-product' && unsupportedVersionState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: unsupportedVersionState.products?.[0]?.id, storeName: unsupportedVersionState.settings?.storeName }
+  });
+
+  // Partial backup metadata must be rejected; legacy backups are only compatible when both fields are absent.
+  const partialMetadataBackups = [
+    { backupFormat: 'nbbntools-kasir', products: [], transactions: [], stockMovements: [], settings: { storeName: 'Partial Version Missing' } },
+    { backupVersion: 1, products: [], transactions: [], stockMovements: [], settings: { storeName: 'Partial Format Missing' } }
+  ];
+  for (let index = 0; index < partialMetadataBackups.length; index++) {
+    await page.locator('#restoreFile').setInputFiles({
+      name: `partial-metadata-backup-${index}.json`,
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(partialMetadataBackups[index]))
+    });
+    await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  }
+  const partialMetadataState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_partial_metadata_without_replacing_data',
+    pass: partialMetadataState.products?.[0]?.id === 'restore-roundtrip-product' && partialMetadataState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: partialMetadataState.products?.[0]?.id, storeName: partialMetadataState.settings?.storeName }
+  });
+
+  // Malformed stock movement entries must be rejected before restore changes local data.
+  const malformedMovementBackup = {
+    backupFormat: 'nbbntools-kasir', backupVersion: 1, backupAt: new Date().toISOString(),
+    products: [], transactions: [],
+    stockMovements: [{ id: 'bad-movement', date: 'not-a-date', productId: 'p1', productName: 'Bad movement', quantity: 1, note: '', stockAfter: 1 }],
+    settings: { storeName: 'Malformed Movement' }
+  };
+  await page.locator('#restoreFile').setInputFiles({ name: 'malformed-stock-movement-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(malformedMovementBackup)) });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup tidak valid atau rusak'));
+  const malformedMovementState = await page.evaluate(() => JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}'));
+  report.checks.push({
+    name: 'cashier_backup_rejects_malformed_stock_movements_without_replacing_data',
+    pass: malformedMovementState.products?.[0]?.id === 'restore-roundtrip-product' && malformedMovementState.settings?.storeName === 'Backup Restore Verification',
+    actual: { productId: malformedMovementState.products?.[0]?.id, storeName: malformedMovementState.settings?.storeName }
   });
 
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
