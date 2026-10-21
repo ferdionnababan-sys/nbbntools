@@ -478,34 +478,33 @@ try {
   report.checks.push({ name: 'cashier_backup_rejects_unsafe_product_price_without_replacing_data', pass: unsafePriceNotApplied, actual: unsafePriceNotApplied });
 
   // A valid backup restore must preserve product and transaction records while applying its settings.
-  const validRestoreBackup = await page.evaluate(() => {
-    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
-    return {
-      backupFormat: 'nbbntools-kasir',
-      backupVersion: 1,
-      backupAt: new Date().toISOString(),
-      products: db.products,
-      transactions: db.transactions,
-      stockMovements: db.stockMovements || [],
-      settings: { ...(db.settings || {}), storeName: 'Backup Restore Verification' }
-    };
-  });
-  const restoreExpected = { products: validRestoreBackup.products.length, transactions: validRestoreBackup.transactions.length };
+  const validRestoreBackup = {
+    backupFormat: 'nbbntools-kasir',
+    backupVersion: 1,
+    backupAt: new Date().toISOString(),
+    products: [{ id: 'restore-roundtrip-product', name: 'Restore Roundtrip Product', category: 'Test', barcode: 'RESTORE-ROUNDTRIP-01', cost: 50, price: 100, stock: 4, emoji: '🧪', active: true }],
+    transactions: [{ id: 'restore-roundtrip-transaction', number: 'RESTORE-ROUNDTRIP-TX', date: new Date().toISOString(), day: new Date().toISOString().slice(0, 10), customer: 'Test', method: 'Tunai', items: [{ id: 'restore-roundtrip-product', name: 'Restore Roundtrip Product', qty: 1, price: 100, cost: 50, subtotal: 100 }], subtotal: 100, discount: 0, tax: 0, total: 100, paid: 100, due: 0, change: 0, cost: 50 }],
+    stockMovements: [],
+    settings: { storeName: 'Backup Restore Verification' }
+  };
   page.once('dialog', dialog => dialog.accept());
   await page.locator('#restoreFile').setInputFiles({
     name: 'valid-roundtrip-backup.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(validRestoreBackup))
   });
-  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Backup berhasil dipulihkan'));
+  await page.waitForFunction(() => {
+    const text = document.querySelector('#toast')?.textContent || '';
+    return text.includes('Backup berhasil dipulihkan') || text.includes('Backup tidak valid atau rusak');
+  });
   const validRestoreResult = await page.evaluate(() => {
     const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
-    return { products: db.products.length, transactions: db.transactions.length, storeName: db.settings?.storeName };
+    return { products: db.products.length, transactions: db.transactions.length, storeName: db.settings?.storeName, productId: db.products[0]?.id, transactionId: db.transactions[0]?.id, toast: document.querySelector('#toast')?.textContent || '' };
   });
   report.checks.push({
     name: 'cashier_valid_backup_restore_preserves_records',
-    pass: validRestoreResult.products === restoreExpected.products && validRestoreResult.transactions === restoreExpected.transactions && validRestoreResult.storeName === 'Backup Restore Verification',
-    expected: restoreExpected,
+    pass: validRestoreResult.products === 1 && validRestoreResult.transactions === 1 && validRestoreResult.storeName === 'Backup Restore Verification' && validRestoreResult.productId === 'restore-roundtrip-product' && validRestoreResult.transactionId === 'restore-roundtrip-transaction' && validRestoreResult.toast.includes('Backup berhasil dipulihkan'),
+    expected: { products: 1, transactions: 1, storeName: 'Backup Restore Verification' },
     actual: validRestoreResult
   });
 
