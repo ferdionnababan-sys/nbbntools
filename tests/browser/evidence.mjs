@@ -404,6 +404,24 @@ try {
   const localDayReportCount = await page.locator('#metricCount').textContent();
   report.checks.push({ name: 'cashier_legacy_transaction_report_uses_local_calendar_day', pass: localDayReportCount.trim() === '2', actual: localDayReportCount.trim(), expected: '2' });
 
+  // Cross-check report revenue, cost, and gross profit against the two known test transactions.
+  const reportTotals = await page.evaluate(() => ({
+    revenue: document.querySelector('#metricRevenue')?.textContent || '',
+    cost: document.querySelector('#metricCost')?.textContent || '',
+    profit: document.querySelector('#metricProfit')?.textContent || '',
+    count: document.querySelector('#metricCount')?.textContent || ''
+  }));
+  const normalizedReportTotals = Object.fromEntries(Object.entries(reportTotals).map(([key, value]) => [key, value.replace(/[^0-9]/g, '')]));
+  report.checks.push({
+    name: 'cashier_report_totals_match_saved_transactions',
+    pass: normalizedReportTotals.revenue === '1200' &&
+      normalizedReportTotals.cost === '600' &&
+      normalizedReportTotals.profit === '600' &&
+      normalizedReportTotals.count === '2',
+    actual: normalizedReportTotals,
+    expected: { revenue: '1200', cost: '600', profit: '600', count: '2' }
+  });
+
   // Checkout must reject totals/costs beyond safe integer precision without changing stock or history.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
@@ -462,8 +480,14 @@ try {
   await historicalProductRow.locator('button[data-action="delete"]').click();
   await page.waitForFunction(() => [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Browser Test Product') && row.innerText.includes('Disembunyikan')));
   const hiddenProductCount = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasText: 'Disembunyikan' }).count();
-  const preservedHistoryCount = await page.locator('button[data-panel="history"]').count();
-  report.checks.push({ name: 'cashier_product_with_history_is_hidden_not_deleted', pass: hiddenProductCount === 1 && preservedHistoryCount === 1, hiddenProductCount });
+  await page.locator('button[data-panel="history"]').click();
+  const preservedHistoryCount = await page.locator('#historyTable tr').filter({ hasText: 'Browser Test Product' }).count();
+  report.checks.push({
+    name: 'cashier_product_with_history_is_hidden_not_deleted',
+    pass: hiddenProductCount === 1 && preservedHistoryCount === 1,
+    hiddenProductCount,
+    preservedHistoryCount
+  });
 
   await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="activate"]').click();
   const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
