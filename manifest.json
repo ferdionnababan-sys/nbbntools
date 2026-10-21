@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "NBBNTOOLS — Tools Online",
+  "short_name": "NBBNTOOLS",
+  "description": "Tools produktivitas gratis dan Kasir Digital NBBNTOOLS.",
+  "lang": "id-ID",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b1020",
+  "theme_color": "#635bff",
+  "icons": [
+    {
+      "src": "/assets/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/app-icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
