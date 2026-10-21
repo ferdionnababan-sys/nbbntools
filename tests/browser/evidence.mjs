@@ -410,8 +410,8 @@ try {
     const transactions = db.transactions.filter(t => t && typeof t === 'object');
     const expected = {
       revenue: transactions.reduce((sum, t) => sum + (Number(t.total) || 0), 0),
-      cost: transactions.reduce((sum, t) => sum + (Number(t.transactionCost) || 0), 0),
-      profit: transactions.reduce((sum, t) => sum + (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.subtotal) || 0) - (Number(item.discount) || 0) - (Number(item.cost) || 0) * (Number(item.quantity) || 0), 0) : 0), 0),
+      cost: transactions.reduce((sum, t) => sum + (Number(t.transactionCost) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.cost) || 0) * (Number(item.quantity) || 0), 0) : 0)), 0),
+      profit: transactions.reduce((sum, t) => sum + (Number(t.subtotal) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.subtotal) || 0), 0) : 0)) - (Number(t.discount) || 0) - (Number(t.transactionCost) || (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.cost) || 0) * (Number(item.quantity) || 0), 0) : 0)), 0),
       count: transactions.length
     };
     const displayed = {
@@ -504,6 +504,7 @@ try {
     ...preservedHistoryState
   });
 
+  await page.locator('button[data-panel="products"]').click();
   await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="activate"]').click();
   const reactivated = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasNotText: 'Disembunyikan' }).count();
   report.checks.push({ name: 'cashier_hidden_product_can_be_reactivated', pass: reactivated === 1, actual: reactivated });
