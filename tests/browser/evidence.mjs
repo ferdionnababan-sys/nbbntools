@@ -303,7 +303,7 @@ try {
 
   // A failed database write during checkout must preserve persisted stock/history and keep the cart recoverable.
   await page.locator('button[data-panel="sale"]').click();
-  await page.locator('#productGrid [data-add="0012345678905"]').click();
+  await page.locator('#productGrid [data-add]').filter({ hasText: 'Browser Test Product' }).click();
   await page.locator('#paidAmount').fill('1000');
   const checkoutBeforeStorageFailure = await page.evaluate(() => {
     const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
