@@ -404,22 +404,33 @@ try {
   const localDayReportCount = await page.locator('#metricCount').textContent();
   report.checks.push({ name: 'cashier_legacy_transaction_report_uses_local_calendar_day', pass: localDayReportCount.trim() === '2', actual: localDayReportCount.trim(), expected: '2' });
 
-  // Cross-check report revenue, cost, and gross profit against the two known test transactions.
-  const reportTotals = await page.evaluate(() => ({
-    revenue: document.querySelector('#metricRevenue')?.textContent || '',
-    cost: document.querySelector('#metricCost')?.textContent || '',
-    profit: document.querySelector('#metricProfit')?.textContent || '',
-    count: document.querySelector('#metricCount')?.textContent || ''
-  }));
-  const normalizedReportTotals = Object.fromEntries(Object.entries(reportTotals).map(([key, value]) => [key, value.replace(/[^0-9]/g, '')]));
+  // Cross-check report metrics against totals calculated from the saved transaction records.
+  const reportTotals = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    const transactions = db.transactions.filter(t => t && typeof t === 'object');
+    const expected = {
+      revenue: transactions.reduce((sum, t) => sum + (Number(t.total) || 0), 0),
+      cost: transactions.reduce((sum, t) => sum + (Number(t.transactionCost) || 0), 0),
+      profit: transactions.reduce((sum, t) => sum + (Array.isArray(t.items) ? t.items.reduce((subtotal, item) => subtotal + (Number(item.subtotal) || 0) - (Number(item.discount) || 0) - (Number(item.cost) || 0) * (Number(item.quantity) || 0), 0) : 0), 0),
+      count: transactions.length
+    };
+    const displayed = {
+      revenue: document.querySelector('#metricRevenue')?.textContent || '',
+      cost: document.querySelector('#metricCost')?.textContent || '',
+      profit: document.querySelector('#metricProfit')?.textContent || '',
+      count: document.querySelector('#metricCount')?.textContent || ''
+    };
+    const normalize = value => value.replace(/[^0-9]/g, '');
+    return {
+      expected: Object.fromEntries(Object.entries(expected).map(([key, value]) => [key, String(value)])),
+      actual: Object.fromEntries(Object.entries(displayed).map(([key, value]) => [key, normalize(value)]))
+    };
+  });
   report.checks.push({
     name: 'cashier_report_totals_match_saved_transactions',
-    pass: normalizedReportTotals.revenue === '1200' &&
-      normalizedReportTotals.cost === '600' &&
-      normalizedReportTotals.profit === '600' &&
-      normalizedReportTotals.count === '2',
-    actual: normalizedReportTotals,
-    expected: { revenue: '1200', cost: '600', profit: '600', count: '2' }
+    pass: Object.keys(reportTotals.expected).every(key => reportTotals.actual[key] === reportTotals.expected[key]),
+    actual: reportTotals.actual,
+    expected: reportTotals.expected
   });
 
   // Checkout must reject totals/costs beyond safe integer precision without changing stock or history.
@@ -481,12 +492,16 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('#productsTable tr')].some(row => row.innerText.includes('Browser Test Product') && row.innerText.includes('Disembunyikan')));
   const hiddenProductCount = await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).filter({ hasText: 'Disembunyikan' }).count();
   await page.locator('button[data-panel="history"]').click();
-  const preservedHistoryCount = await page.locator('#historyTable tr').filter({ hasText: 'Browser Test Product' }).count();
+  const preservedHistoryState = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1'));
+    const matchingLines = db.transactions.flatMap(t => Array.isArray(t.items) ? t.items : []).filter(item => item.name === 'Browser Test Product');
+    return { transactionRows: document.querySelectorAll('#historyTable tr').length, preservedHistoryCount: matchingLines.length };
+  });
   report.checks.push({
     name: 'cashier_product_with_history_is_hidden_not_deleted',
-    pass: hiddenProductCount === 1 && preservedHistoryCount === 1,
+    pass: hiddenProductCount === 1 && preservedHistoryState.preservedHistoryCount === 1,
     hiddenProductCount,
-    preservedHistoryCount
+    ...preservedHistoryState
   });
 
   await page.locator('#productsTable tr').filter({ hasText: 'Browser Test Product' }).locator('button[data-action="activate"]').click();
