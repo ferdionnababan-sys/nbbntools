@@ -567,6 +567,49 @@ try {
     actual: validRestoreResult
   });
 
+  // A valid restore whose database write fails must preserve the previously committed database.
+  const restoreFailureBackup = {
+    backupFormat: 'nbbntools-kasir',
+    backupVersion: 1,
+    backupAt: new Date().toISOString(),
+    products: [{ id: 'restore-failure-product', name: 'Must Not Replace Existing Data', category: 'Test', barcode: 'RESTORE-FAILURE-01', cost: 1, price: 2, stock: 3, active: true }],
+    transactions: [],
+    stockMovements: [],
+    settings: { storeName: 'Must Not Replace Existing Settings' }
+  };
+  await page.evaluate(() => {
+    window.__originalStorageSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'nbbntools_kasir_v1') throw new DOMException('quota test', 'QuotaExceededError');
+      return window.__originalStorageSetItem.call(this, key, value);
+    };
+  });
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#restoreFile').setInputFiles({
+    name: 'restore-storage-failure-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(restoreFailureBackup))
+  });
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Penyimpanan penuh'));
+  const restoreStorageFailureState = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
+    return {
+      productId: db.products[0]?.id,
+      transactionId: db.transactions[0]?.id,
+      storeName: db.settings?.storeName,
+      replacementProductPresent: db.products.some(p => p.id === 'restore-failure-product')
+    };
+  });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; delete window.__originalStorageSetItem; });
+  report.checks.push({
+    name: 'cashier_restore_storage_failure_preserves_previous_database',
+    pass: restoreStorageFailureState.productId === 'restore-roundtrip-product' &&
+      restoreStorageFailureState.transactionId === 'restore-roundtrip-transaction' &&
+      restoreStorageFailureState.storeName === 'Backup Restore Verification' &&
+      !restoreStorageFailureState.replacementProductPresent,
+    actual: restoreStorageFailureState
+  });
+
   // Stock-in must reject additions that exceed JavaScript's safe integer range.
   await page.evaluate(() => {
     const key = 'nbbntools_kasir_v1';
