@@ -59,6 +59,29 @@ try {
   report.checks.push({ name: 'pwa_service_worker_supported', pass: pwa.serviceWorkerSupported });
   report.checks.push({ name: 'pwa_service_worker_activated', pass: pwa.serviceWorkerActivated, errors: pwa.errors });
 
+  // Verify actual offline navigation from the installed service-worker cache.
+  if (pwa.serviceWorkerActivated) {
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 10000 });
+      await context.setOffline(true);
+      const offlineHomeResponse = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const offlineHomeTitle = await page.title();
+      report.checks.push({ name: 'pwa_homepage_loads_from_cache_offline', pass: Boolean(offlineHomeResponse && offlineHomeResponse.ok()) && offlineHomeTitle.includes('NBBNTOOLS'), status: offlineHomeResponse?.status() ?? null, title: offlineHomeTitle });
+      const offlineCashierResponse = await page.goto(new URL('/kasir/', target).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const offlineCashierLoaded = await page.locator('#productGrid').count() === 1;
+      report.checks.push({ name: 'pwa_cashier_shell_loads_from_cache_offline', pass: Boolean(offlineCashierResponse && offlineCashierResponse.ok()) && offlineCashierLoaded, status: offlineCashierResponse?.status() ?? null, cashierShellLoaded: offlineCashierLoaded });
+    } catch (error) {
+      report.checks.push({ name: 'pwa_offline_navigation_checks', pass: false, error: String(error) });
+    } finally {
+      await context.setOffline(false);
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    }
+  } else {
+    report.checks.push({ name: 'pwa_homepage_loads_from_cache_offline', pass: false, reason: 'service worker did not activate' });
+    report.checks.push({ name: 'pwa_cashier_shell_loads_from_cache_offline', pass: false, reason: 'service worker did not activate' });
+  }
+
   const toolCount = await page.locator('.card').count();
   report.checks.push({ name: 'homepage_has_15_tool_cards', pass: toolCount === 15, actual: toolCount });
 
