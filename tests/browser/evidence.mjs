@@ -75,6 +75,28 @@ try {
       const offlineCashierResponse = await page.goto(new URL('/kasir/', target).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
       const offlineCashierLoaded = await page.locator('#productGrid').count() === 1;
       report.checks.push({ name: 'pwa_cashier_shell_loads_from_cache_offline', pass: Boolean(offlineCashierResponse && offlineCashierResponse.ok()) && offlineCashierLoaded, status: offlineCashierResponse?.status() ?? null, cashierShellLoaded: offlineCashierLoaded });
+      if (offlineCashierLoaded) {
+        await page.locator('button[data-panel="products"]').click();
+        await page.locator('#addProduct').click();
+        await page.locator('#pName').fill('Offline Persistence Test Product');
+        await page.locator('#pCategory').fill('Offline Test');
+        await page.locator('#pBarcode').fill('OFFLINE-PERSIST-001');
+        await page.locator('#pCost').fill('100');
+        await page.locator('#pPrice').fill('200');
+        await page.locator('#pStock').fill('2');
+        await page.locator('#productForm button[type="submit"]').click();
+        await page.locator('#productsTable').getByText('Offline Persistence Test Product').waitFor({ timeout: 8000 });
+        const offlineProductCreated = await page.locator('#productsTable tr').filter({ hasText: 'Offline Persistence Test Product' }).count() === 1;
+        report.checks.push({ name: 'cashier_can_create_product_while_offline', pass: offlineProductCreated });
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.locator('button[data-panel="products"]').click();
+        const offlineProductAfterReload = await page.locator('#productsTable tr').filter({ hasText: 'Offline Persistence Test Product' }).count();
+        const offlineProductStored = await page.evaluate(() => {
+          const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{"products":[]}');
+          return db.products.some(product => product.barcode === 'OFFLINE-PERSIST-001');
+        });
+        report.checks.push({ name: 'cashier_offline_product_persists_after_offline_reload', pass: offlineProductAfterReload === 1 && offlineProductStored, visibleAfterReload: offlineProductAfterReload, stored: offlineProductStored });
+      }
     } catch (error) {
       report.checks.push({ name: 'pwa_offline_navigation_checks', pass: false, error: String(error) });
     } finally {
