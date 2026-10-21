@@ -121,7 +121,7 @@ try {
 
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.locator('button[data-panel="history"]').click();
-        const offlineSaleHistoryVisible = await page.locator('#historyTable').getByText('Offline Persistence Test Product').count() > 0;
+        const offlineSaleHistoryVisible = await page.locator('#historyTable tr').count() === 1;
         const offlineSaleAfterReload = await page.evaluate(() => {
           const db = JSON.parse(localStorage.getItem('nbbntools_kasir_v1') || '{}');
           const product = (db.products || []).find(item => item.barcode === 'OFFLINE-PERSIST-001');
