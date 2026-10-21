@@ -215,9 +215,9 @@ try {
     const db = JSON.parse(localStorage.getItem(key));
     db.products.push({ id: 'duplicate-scan-product', name: 'Duplicate Scan Product', category: 'Testing', barcode: '0012345678905', cost: 100, price: 300, stock: 4, active: true });
     localStorage.setItem(key, JSON.stringify(db));
-    window.__mockBarcodeValue = '0012345678905';
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { window.__mockBarcodeValue = '0012345678905'; });
   await page.locator('button[data-panel="sale"]').click();
   await page.locator('#scanBarcodeBtn').click();
   await page.waitForFunction(() => !document.querySelector('#scannerModal')?.classList.contains('show'), null, { timeout: 8000 });
